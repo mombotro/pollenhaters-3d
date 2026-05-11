@@ -1,21 +1,20 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import Input from '../engine/Input.js';
+import World from '../engine/World.js';
+import { rotateToward } from '../utils/math.js';
 import { BEE } from '../constants.js';
 import SoundSynth from '../systems/SoundSynth.js';
 
-export default class PlayerBee extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, onFire) {
-    super(scene, x, y, 'player-bee');
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    this.setDepth(10);
-    this.setCollideWorldBounds(true);
+export default class PlayerBee extends Entity {
+  constructor(x, y, onFire) {
+    super(x, y, 'player-bee');
+    this.maxSpeed = BEE.SPEED;
+    this.drag = 0.015;
     this.hp = BEE.HP;
     this.maxHp = BEE.HP;
     this.alive = true;
     this._onFire = onFire ?? null;
     this._lastFired = 0;
-    this._cursors = scene.input.keyboard.createCursorKeys();
-    this._wasd = scene.input.keyboard.addKeys('W,A,S,D');
     this._speed = BEE.SPEED;
     this._sapCapacity = BEE.SAP_CAPACITY;
     this._stingerDamage = BEE.STINGER_DAMAGE;
@@ -23,172 +22,126 @@ export default class PlayerBee extends Phaser.Physics.Arcade.Sprite {
     this._stingerRange = BEE.STINGER_RANGE;
     this._stingerSpeed = BEE.STINGER_SPEED;
     this.armor = 0;
-    this.setDrag(800, 800);
-    
     this.isDashing = false;
     this.dashEndTime = 0;
     this.lastDashTime = 0;
-    this._dashTargetRotation = null;
-    this._space = scene.input.keyboard.addKey('SPACE');
-    this._touchAxis = { x: 0, y: 0 };
-    this._touchDash = false;
-    this._touchAimActive = false;
+    this._dashTargetAngle = null;
     this._aimAngle = null;
-    this._gpAxis = { x: 0, y: 0 };
-    this._gpAWasDown = false;
+    this._gpBWasDown = false;
+    World.add(this, 'bee', 'player');
   }
 
-  update(time, delta) {
+  update(time, dt) {
     if (!this.alive) return;
 
     if (this.isDashing) {
       if (time >= this.dashEndTime) {
         this.isDashing = false;
-        this._dashTargetRotation = null;
+        this._dashTargetAngle = null;
         this.clearTint();
-      } else if (this._dashTargetRotation !== null) {
-        this.rotation = Phaser.Math.Angle.RotateTo(this.rotation, this._dashTargetRotation, 0.5);
+      } else if (this._dashTargetAngle !== null) {
+        this.angle = rotateToward(this.angle, this._dashTargetAngle, 0.5);
       }
     } else {
-      if ((Phaser.Input.Keyboard.JustDown(this._space) || this._touchDash) && time - this.lastDashTime >= BEE.DASH_COOLDOWN) {
-
-        this._touchDash = false;
-        // Determine dash direction from held keys / gamepad; fall back to forward
-        const left  = this._cursors.left.isDown  || this._wasd.A.isDown;
-        const right = this._cursors.right.isDown || this._wasd.D.isDown;
-        const up    = this._cursors.up.isDown    || this._wasd.W.isDown;
-        const down  = this._cursors.down.isDown  || this._wasd.S.isDown;
+      const spacePush = Input.justDown(' ');
+      const gpA = Input.gamepad.justDown(0);
+      if ((spacePush || gpA) && time - this.lastDashTime >= BEE.DASH_COOLDOWN) {
+        const left  = Input.isDown('ArrowLeft')  || Input.isDown('a');
+        const right = Input.isDown('ArrowRight') || Input.isDown('d');
+        const up    = Input.isDown('ArrowUp')    || Input.isDown('w');
+        const down  = Input.isDown('ArrowDown')  || Input.isDown('s');
         let ax = (right ? 1 : 0) - (left ? 1 : 0);
         let ay = (down  ? 1 : 0) - (up   ? 1 : 0);
-        if (ax === 0 && ay === 0) { ax = this._gpAxis.x; ay = this._gpAxis.y; }
+        if (ax === 0 && ay === 0) { ax = Input.gamepad.axis(0); ay = Input.gamepad.axis(1); }
 
         const dashAngle = (ax !== 0 || ay !== 0)
           ? Math.atan2(ay, ax)
-          : this.rotation - Math.PI / 2;
+          : this.angle - Math.PI / 2;
 
-        this._dashTargetRotation = dashAngle - Math.PI / 2;
+        this._dashTargetAngle = dashAngle - Math.PI / 2;
         this.isDashing = true;
         this.dashEndTime = time + BEE.DASH_DURATION;
         this.lastDashTime = time;
         this.setTint(0x88ffff);
 
         const dashSpeed = this._speed * BEE.DASH_SPEED_MULTIPLIER;
-        this.setVelocity(Math.cos(dashAngle) * dashSpeed, Math.sin(dashAngle) * dashSpeed);
+        this.vx = Math.cos(dashAngle) * dashSpeed;
+        this.vy = Math.sin(dashAngle) * dashSpeed;
       }
     }
 
-    // Aim: mouse right-click first, then touch/gamepad can set if mouse not active
-    const ptr = this.scene.input.mousePointer;
-    if (ptr && ptr.rightButtonDown()) {
-      const cam = this.scene.cameras.main;
-      const beeScreenX = (this.x - cam.scrollX) * cam.zoom;
-      const beeScreenY = (this.y - cam.scrollY) * cam.zoom;
-      this._aimAngle = Math.atan2(ptr.y - beeScreenY, ptr.x - beeScreenX);
-    } else if (!this._touchAimActive) {
-      this._aimAngle = null;
-    }
     this._readGamepad();
 
-    if (this.isDashing) {
-      this.setMaxVelocity(this._speed * BEE.DASH_SPEED_MULTIPLIER, this._speed * BEE.DASH_SPEED_MULTIPLIER);
-      this.setAcceleration(0, 0);
-    } else {
-      this.setMaxVelocity(this._speed, this._speed);
+    if (!this.isDashing) {
+      this.maxSpeed = this._speed;
       this._move();
+    } else {
+      this.maxSpeed = this._speed * BEE.DASH_SPEED_MULTIPLIER;
     }
-    
+
     this._autoFire(time);
   }
 
   _readGamepad() {
-    const gp = this.scene.input.gamepad;
-    const pad = gp?.total > 0 ? gp.gamepads.find(p => p?.connected) : null;
-    this._gpAxis = { x: 0, y: 0 };
-    if (!pad) return;
+    const rx = Input.gamepad.axis(2);
+    const ry = Input.gamepad.axis(3);
+    if (Math.hypot(rx, ry) > 0.15) this._aimAngle = Math.atan2(ry, rx);
 
-    const DEAD = 0.15;
-
-    // Left stick + D-pad movement
-    let gx = Math.abs(pad.leftStick.x) > DEAD ? pad.leftStick.x : 0;
-    let gy = Math.abs(pad.leftStick.y) > DEAD ? pad.leftStick.y : 0;
-    if (pad.buttons[14]?.pressed) gx = -1;
-    if (pad.buttons[15]?.pressed) gx =  1;
-    if (pad.buttons[12]?.pressed) gy = -1;
-    if (pad.buttons[13]?.pressed) gy =  1;
-    const len = Math.hypot(gx, gy);
-    if (len > 1) { gx /= len; gy /= len; }
-    this._gpAxis = { x: gx, y: gy };
-
-    // A button (index 0) → dash (rising edge)
-    const aDown = pad.buttons[0]?.pressed ?? false;
-    if (aDown && !this._gpAWasDown) this._touchDash = true;
-    this._gpAWasDown = aDown;
-
-    // B button (index 1) → toggle build menu (rising edge)
-    const bDown = pad.buttons[1]?.pressed ?? false;
+    const bDown = Input.gamepad.isDown(1);
     if (bDown && !this._gpBWasDown) {
-      const bm = this.scene.buildMenu;
-      if (bm) { if (bm.visible) bm.hide(); else bm.show(); }
+      World.getSystem('buildMenu')?.toggle();
     }
     this._gpBWasDown = bDown;
-
-    // Right stick → aim (RT check removed: Phaser analog threshold unreliable)
-    const rx = pad.rightStick.x;
-    const ry = pad.rightStick.y;
-    if (Math.hypot(rx, ry) > DEAD) {
-      this._aimAngle = Math.atan2(ry, rx);
-    }
   }
 
   _move() {
-    const left  = this._cursors.left.isDown  || this._wasd.A.isDown;
-    const right = this._cursors.right.isDown || this._wasd.D.isDown;
-    const up    = this._cursors.up.isDown    || this._wasd.W.isDown;
-    const down  = this._cursors.down.isDown  || this._wasd.S.isDown;
+    const left  = Input.isDown('ArrowLeft')  || Input.isDown('a');
+    const right = Input.isDown('ArrowRight') || Input.isDown('d');
+    const up    = Input.isDown('ArrowUp')    || Input.isDown('w');
+    const down  = Input.isDown('ArrowDown')  || Input.isDown('s');
 
-    let ax = (right ? 1 : 0) - (left ? 1 : 0);
-    let ay = (down  ? 1 : 0) - (up   ? 1 : 0);
+    let moveX = (right ? 1 : 0) - (left ? 1 : 0);
+    let moveY = (down  ? 1 : 0) - (up   ? 1 : 0);
 
-    if (ax === 0 && ay === 0) {
-      ax = this._touchAxis.x || this._gpAxis.x;
-      ay = this._touchAxis.y || this._gpAxis.y;
-    } else if (ax !== 0 && ay !== 0) {
-      ax *= 0.707; ay *= 0.707;
+    if (moveX === 0 && moveY === 0) {
+      moveX = Input.gamepad.axis(0);
+      moveY = Input.gamepad.axis(1);
+    } else if (moveX !== 0 && moveY !== 0) {
+      moveX *= 0.707; moveY *= 0.707;
     }
 
     const accel = this._speed * 10;
-    this.setAcceleration(ax * accel, ay * accel);
+    this.ax = moveX * accel;
+    this.ay = moveY * accel;
 
+    const speedSq = this.vx * this.vx + this.vy * this.vy;
     if (this._aimAngle !== null) {
-      this.rotation = Phaser.Math.Angle.RotateTo(this.rotation, this._aimAngle - Math.PI / 2, 0.15);
-    } else if (this.body.velocity.lengthSq() > 10) {
-      const targetRotation = this.body.velocity.angle() + Math.PI / 2;
-      this.rotation = Phaser.Math.Angle.RotateTo(this.rotation, targetRotation, 0.15);
+      this.angle = rotateToward(this.angle, this._aimAngle - Math.PI / 2, 0.15);
+    } else if (speedSq > 10) {
+      const targetAngle = Math.atan2(this.vy, this.vx) + Math.PI / 2;
+      this.angle = rotateToward(this.angle, targetAngle, 0.15);
     }
   }
 
   _autoFire(time) {
     if (!this._onFire || time - this._lastFired < this._stingerRate) return;
-    const tailAngle = this.rotation + Math.PI / 2;
-    const offset = this.height * 0.5;
-    const spawnX = this.x + Math.cos(tailAngle) * offset;
-    const spawnY = this.y + Math.sin(tailAngle) * offset;
+    const tailAngle = this.angle + Math.PI / 2;
+    const spawnX = this.x + Math.cos(tailAngle) * 16;
+    const spawnY = this.y + Math.sin(tailAngle) * 16;
     const fired = this._onFire(spawnX, spawnY, this._stingerRange, this._stingerDamage, this._stingerSpeed, tailAngle);
     if (fired) { this._lastFired = time; SoundSynth.play('shoot'); }
   }
 
-  // Returns true if bee died
   takeDamage(amount) {
     if (!this.alive || this.isDashing) return false;
     const actual = Math.max(1, amount - this.armor);
     this.hp = Math.max(0, this.hp - actual);
     SoundSynth.play('player-hit');
     this.setTint(0xff4444);
-    this.scene.time.delayedCall(150, () => { if (this.active) this.clearTint(); });
+    World.after(150, () => { if (this.active) this.clearTint(); });
     if (this.hp <= 0) {
       this.alive = false;
       this.setVisible(false).setActive(false);
-      this.body.enable = false;
     }
     return this.hp <= 0;
   }
@@ -197,7 +150,6 @@ export default class PlayerBee extends Phaser.Physics.Arcade.Sprite {
     this.hp = this.maxHp;
     this.alive = true;
     this.setPosition(x, y).setVisible(true).setActive(true);
-    this.body.enable = true;
     this.clearTint();
   }
 }
