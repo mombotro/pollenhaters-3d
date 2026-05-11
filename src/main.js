@@ -1,21 +1,15 @@
-import World from './engine/World.js';
 import Input from './engine/Input.js';
-import Camera from './engine/Camera.js';
+import World from './engine/World.js';
 import BillboardRenderer from './renderer/BillboardRenderer.js';
-import { update as physicsUpdate } from './engine/Physics.js';
-import { WORLD } from './constants.js';
-import PlayerBee from './entities/PlayerBee.js';
-
-const BOUNDS = { minX: 0, minY: 0, maxX: WORLD.WIDTH, maxY: WORLD.HEIGHT };
-const ALL_TAGS = ['bee', 'wasp', 'stinger', 'flower', 'tower', 'gem', 'pickup', 'spider', 'butterfly', 'web', 'breakable'];
+import HUD from './renderer/HUD.js';
+import { transition, update as sceneUpdate, getCurrent } from './scenes/index.js';
+import BootScene from './scenes/BootScene.js';
 
 const canvas = document.getElementById('game');
 const renderer = new BillboardRenderer(canvas);
-const camera = new Camera({ offset: 120, lerpAngle: 0.12 });
+const hud = new HUD(canvas.getContext('2d'));
 
 Input.init();
-
-const player = new PlayerBee(WORLD.WIDTH / 2, WORLD.HEIGHT / 2, null);
 
 let lastTime = null;
 
@@ -27,22 +21,50 @@ function loop(timestamp) {
   Input.poll();
   World.update(dt * 1000);
 
-  const seen = new Set();
-  for (const tag of ALL_TAGS) {
-    for (const e of World.getByTag(tag)) {
-      if (seen.has(e) || !e.active) continue;
-      seen.add(e);
-      e.update?.(timestamp, dt);
-      physicsUpdate(e, dt, BOUNDS);
+  sceneUpdate(dt, timestamp);
+
+  const scene = getCurrent();
+  const camera = scene?.getCamera?.();
+
+  if (camera) {
+    const allEntities = [
+      ...World.getByTag('bee'),
+      ...World.getByTag('wasp'),
+      ...World.getByTag('stinger'),
+      ...World.getByTag('flower'),
+      ...World.getByTag('tower'),
+      ...World.getByTag('gem'),
+      ...World.getByTag('pickup'),
+      ...World.getByTag('spider'),
+      ...World.getByTag('butterfly'),
+      ...World.getByTag('breakable'),
+    ];
+
+    renderer.render(camera, allEntities, window.__sprites ?? {});
+
+    const resources = World.getSystem('resources');
+    const player = World.getByTag('player')[0];
+    if (resources && player) {
+      const runDuration = scene._runDuration ?? 600000;
+      const elapsed = scene._playTime ?? 0;
+      hud.render({
+        hp: player.hp ?? 0,
+        maxHp: player.maxHp ?? 5,
+        honey: resources.getHoney(),
+        honeyStorage: resources.getHoneyStorage(),
+        timer: runDuration - elapsed,
+        sapCarried: resources.getSapCarried('player'),
+        sapCapacity: player._sapCapacity ?? 10,
+        wave: scene.waveManager?.getWaveNumber() ?? 0,
+        level: scene.level ?? 1,
+        xp: scene.xp ?? 0,
+        reqXp: scene.reqXp ?? 100,
+      });
     }
   }
-
-  camera.follow(player, dt);
-
-  const allEntities = [...seen];
-  renderer.render(camera, allEntities, window.__sprites ?? {});
 
   requestAnimationFrame(loop);
 }
 
+transition(BootScene);
 requestAnimationFrame(loop);

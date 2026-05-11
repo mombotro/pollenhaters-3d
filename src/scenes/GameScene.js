@@ -1,5 +1,11 @@
-import Phaser from 'phaser';
-import { WORLD, BEE, HIVE, WASP, WAVE, FLOWER, TIMER, WORKER, TOWER, XP, BUTTERFLY, SPIDER, WEB, WIND, BREAKABLE, SOLDIER, PICKUP, pickFlowerType } from '../constants.js';
+import World from '../engine/World.js';
+import Camera from '../engine/Camera.js';
+import { update as physicsUpdate } from '../engine/Physics.js';
+import Input from '../engine/Input.js';
+import {
+  WORLD, BEE, HIVE, WASP, WAVE, FLOWER, TIMER, WORKER, TOWER, XP,
+  BUTTERFLY, SPIDER, WEB, BREAKABLE, SOLDIER, PICKUP, pickFlowerType,
+} from '../constants.js';
 import MetaSave from '../systems/MetaSave.js';
 import Flower from '../entities/Flower.js';
 import Hive from '../entities/Hive.js';
@@ -13,29 +19,25 @@ import WaveManager from '../systems/WaveManager.js';
 import WaspHiveSystem from '../systems/WaspHiveSystem.js';
 import HunterWasp from '../entities/HunterWasp.js';
 import RaiderWasp from '../entities/RaiderWasp.js';
-import ResinTrap from '../towers/ResinTrap.js';
-import GuardPost from '../towers/GuardPost.js';
 import Pickup from '../entities/Pickup.js';
 import Breakable from '../entities/Breakable.js';
-import HUD from '../ui/HUD.js';
-import TouchControls from '../ui/TouchControls.js';
-import BuildMenu from '../ui/BuildMenu.js';
-import LevelUpMenu from '../ui/LevelUpMenu.js';
 import WindSystem from '../systems/WindSystem.js';
 import Butterfly from '../entities/Butterfly.js';
 import Spider from '../entities/Spider.js';
-import WebTrap from '../entities/WebTrap.js';
 import SoldierBee from '../entities/SoldierBee.js';
+import GuardPost from '../towers/GuardPost.js';
+import ResinTrap from '../towers/ResinTrap.js';
 import PoisonHoney from '../towers/PoisonHoney.js';
 import ArcherWasp from '../entities/ArcherWasp.js';
 import SoundSynth from '../systems/SoundSynth.js';
+import { dist, randInt } from '../utils/math.js';
 
-export default class GameScene extends Phaser.Scene {
-  constructor() { super('GameScene'); }
+const BOUNDS = { minX: 0, minY: 0, maxX: WORLD.WIDTH, maxY: WORLD.HEIGHT };
 
-  init(data) {
-    this.hiveX = data.hiveX ?? 1280;
-    this.hiveY = data.hiveY ?? 720;
+export default class GameScene {
+  constructor(data = {}) {
+    this.hiveX = data.hiveX ?? WORLD.WIDTH / 2;
+    this.hiveY = data.hiveY ?? WORLD.HEIGHT / 2;
     this._ended = false;
     this._gameTime = 0;
     this._playTime = 0;
@@ -48,183 +50,25 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
-    this.add.rectangle(WORLD.WIDTH / 2, WORLD.HEIGHT / 2, WORLD.WIDTH, WORLD.HEIGHT, 0x2d5a1b);
-    this.cameras.main.setBounds(0, 0, WORLD.WIDTH, WORLD.HEIGHT);
+    World.clear();
 
-    const BT = 56;
-    const borderGfx = this.add.graphics().setDepth(6);
-    borderGfx.fillStyle(0x142d0a, 1);
-    borderGfx.fillRect(0, 0, WORLD.WIDTH, BT);
-    borderGfx.fillRect(0, WORLD.HEIGHT - BT, WORLD.WIDTH, BT);
-    borderGfx.fillRect(0, 0, BT, WORLD.HEIGHT);
-    borderGfx.fillRect(WORLD.WIDTH - BT, 0, BT, WORLD.HEIGHT);
-
-    this._decoList = [];
-    for (let i = 0; i < 150; i++) {
-      const x = Phaser.Math.Between(0, WORLD.WIDTH);
-      const y = Phaser.Math.Between(0, WORLD.HEIGHT);
-      const frame = Phaser.Math.Between(0, 6);
-      const scale = Phaser.Math.FloatBetween(0.1, 0.2);
-      const img = this.add.image(x, y, 'grass-deco', frame)
-        .setScale(scale)
-        .setAlpha(0.9)
-        .setFlipX(Math.random() < 0.5)
-        .setCrop(4, 4, 392, 392);
-      this._decoList.push(img);
-    }
-    this.physics.world.setBounds(0, 0, WORLD.WIDTH, WORLD.HEIGHT);
-
-    this.flowers = this.physics.add.staticGroup();
-    this.wasps = this.physics.add.group();
-    this.stingers = this.physics.add.group();
-    this.workers = this.physics.add.group();
-    this.pickups = this.physics.add.group();
-    this.breakables = this.physics.add.group();
-    this._towerList = [];
-    this.soldiers = this.physics.add.group();
-    this.enemyStingers = this.physics.add.group();
-    this.butterflies = this.physics.add.group();
-    this.spiders = this.physics.add.group();
-    this._webList = [];
-    this.wind = new WindSystem();
-
-    this._spawnInitialFlowers();
-
-    this.hive = new Hive(this, this.hiveX, this.hiveY);
+    const meta = MetaSave.load();
+    const _u = meta.upgrades ?? {};
 
     this.resources = new ResourceManager({
       honeyStorage: HIVE.HONEY_STORAGE,
       sapConversionRate: HIVE.SAP_CONVERSION_RATE,
     });
-
-    this.upgrades = new UpgradeManager();
-
-    this.pollination = new PollinationSystem({
-      spawnDelay: FLOWER.SPAWN_DELAY,
-      radius: FLOWER.POLLINATION_RADIUS,
-      onSpawn: ({ x, y }) => {
-        const fx = Phaser.Math.Clamp(x, 40, WORLD.WIDTH - 40);
-        const fy = Phaser.Math.Clamp(y, 40, WORLD.HEIGHT - 40);
-        this._spawnFlower(fx, fy);
-      },
-    });
-
-    this._conversionTimer = this.time.addEvent({
-      delay: HIVE.SAP_CONVERSION_INTERVAL,
-      callback: () => this.resources.convertSap(1),
-      loop: true,
-    });
-
-    this.time.addEvent({
-      delay: BREAKABLE.SPAWN_DELAY,
-      callback: () => this._spawnBreakable(),
-      loop: true,
-    });
-
-    this.player = new PlayerBee(
-      this,
-      this.hiveX,
-      this.hiveY + 80,
-      (x, y, range, damage, speed, backwardAngle) => {
-        // Only fire if an enemy is within range
-        let hasTarget = false;
-        for (const w of this.wasps.getChildren()) {
-          if (w.active && Phaser.Math.Distance.Between(x, y, w.x, w.y) < range) { hasTarget = true; break; }
-        }
-        if (!hasTarget) {
-          for (const b of this.breakables.getChildren()) {
-            if (b.active && Phaser.Math.Distance.Between(x, y, b.x, b.y) < range) { hasTarget = true; break; }
-          }
-        }
-        if (!hasTarget) {
-          for (const wh of this.waspHiveSystem.hives) {
-            if (wh.hp > 0 && Phaser.Math.Distance.Between(x, y, wh.x, wh.y) < range) { hasTarget = true; break; }
-          }
-        }
-        if (!hasTarget) return false;
-
-        const spawnX = x + Math.cos(backwardAngle) * 14;
-        const spawnY = y + Math.sin(backwardAngle) * 14;
-        let s = this.stingers.getFirstDead(false);
-        if (!s) { s = new Stinger(this, 0, 0); this.stingers.add(s); }
-        s.fire(spawnX, spawnY, damage, range, speed,
-               spawnX + Math.cos(backwardAngle) * range,
-               spawnY + Math.sin(backwardAngle) * range);
-        return true;
-      },
-    );
-
-    this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
-
-    this.physics.add.overlap(this.player, this.flowers, (player, flower) => {
-      const space = this.player._sapCapacity - this.resources.getSapCarried('player');
-      if (space > 0 && flower.sapRemaining > 0) {
-        if (flower.collectPollen()) {
-          this.pollination.pollinate({ x: flower.x, y: flower.y }, this.time.now);
-        }
-        const taken = flower.collectSap(space);
-        if (taken > 0) {
-          const now = this._gameTime;
-          if (!flower._lastBurst || now - flower._lastBurst > 400) {
-            this._burst(flower.x, flower.y, 0xffff88, 5);
-            SoundSynth.play('pickup');
-            flower._lastBurst = now;
-          }
-        }
-        this.resources.addSap('player', taken, this.player._sapCapacity);
-      } else if (flower.sapRemaining <= 0) {
-        if (flower.collectPollen()) {
-          this.pollination.pollinate({ x: flower.x, y: flower.y }, this.time.now);
-        }
-      }
-    });
-
-    this.physics.add.overlap(this.player, this.hive, () => {
-      if (this.resources.getSapCarried('player') > 0) {
-        this._burst(this.hive.x, this.hive.y, 0xffd700, 10);
-        SoundSynth.play('deposit');
-        this.resources.depositSap('player');
-      }
-    });
-
-    this.physics.add.overlap(this.player, this.pickups, (player, pickup) => {
-      if (pickup.onCollect(player, this)) {
-        this._burst(pickup.x, pickup.y, 0xffff88, 6);
-      }
-    });
-
-    this.physics.add.overlap(this.stingers, this.breakables, (stinger, breakable) => {
-      stinger.release();
-      breakable.takeDamage(stinger.damage);
-    });
-
-    this.physics.add.collider(this.wasps, this.wasps);
-
-    this.physics.add.overlap(this.player, this.enemyStingers, (player, stinger) => {
-      stinger.release();
-      if (!player.alive) return;
-      if (player.takeDamage(stinger.damage)) this._onPlayerDeath();
-    });
-
-    this.physics.add.overlap(this.workers, this.enemyStingers, (worker, stinger) => {
-      if (!worker.alive) return;
-      stinger.release();
-      worker.takeDamage(stinger.damage);
-    });
-
-    this.physics.add.overlap(this.soldiers, this.enemyStingers, (soldier, stinger) => {
-      if (!soldier.alive) return;
-      stinger.release();
-      soldier.takeDamage(stinger.damage);
-    });
-
-    // Apply meta-progression upgrades from save
-    const _metaSave = MetaSave.load();
-    const _u = _metaSave.upgrades;
+    World.addSystem('resources', this.resources);
 
     this._runDuration = TIMER.RUN_DURATION
       - (_u.QUICK_RUN_META ?? 0) * 60000
       + (_u.LONG_RUN_META  ?? 0) * 300000;
+
+    this._sapConversionInterval = HIVE.SAP_CONVERSION_INTERVAL;
+    this._lastSapConversionAt = 0;
+    this._lastBreakableSpawnAt = 0;
+
     this.waveManager = new WaveManager({
       firstWaveDelay: WAVE.FIRST_WAVE_DELAY,
       waveInterval: WAVE.WAVE_INTERVAL,
@@ -232,483 +76,450 @@ export default class GameScene extends Phaser.Scene {
       countIncrement: WAVE.COUNT_INCREMENT,
     });
 
+    this.wind = new WindSystem();
+
+    this.pollination = new PollinationSystem({
+      spawnDelay: FLOWER.SPAWN_DELAY,
+      radius: FLOWER.POLLINATION_RADIUS,
+      onSpawn: ({ x, y }) => {
+        const fx = Math.max(40, Math.min(WORLD.WIDTH - 40, x));
+        const fy = Math.max(40, Math.min(WORLD.HEIGHT - 40, y));
+        this._spawnFlower(fx, fy);
+      },
+    });
+    World.addSystem('pollination', this.pollination);
+
+    this.upgrades = new UpgradeManager();
+    World.addSystem('upgrades', this.upgrades);
+
     this.waspHiveSystem = new WaspHiveSystem({
-      scene: this,
       playerHiveX: this.hiveX,
       playerHiveY: this.hiveY,
       extraHives: _u.EXTRA_HIVES_META ?? 0,
       onDestroyed: () => this._endGame(true, true),
     });
+    World.addSystem('waspHive', this.waspHiveSystem);
 
+    World.addSystem('fx', { burst: () => {} });
+    World.addSystem('game', { collectXp: (val) => this._collectXp(val) });
+
+    this._spawnInitialFlowers();
+    this.hive = new Hive(this.hiveX, this.hiveY);
+
+    this.player = new PlayerBee(
+      this.hiveX, this.hiveY + 80,
+      (x, y, range, damage, speed, backwardAngle) => {
+        let hasTarget = false;
+        for (const w of World.getByTag('wasp')) {
+          if (w.active && dist(x, y, w.x, w.y) < range) { hasTarget = true; break; }
+        }
+        if (!hasTarget) {
+          for (const b of World.getByTag('breakable')) {
+            if (b.active && dist(x, y, b.x, b.y) < range) { hasTarget = true; break; }
+          }
+        }
+        if (!hasTarget) {
+          for (const wh of this.waspHiveSystem.hives) {
+            if (wh.hp > 0 && dist(x, y, wh.x, wh.y) < range) { hasTarget = true; break; }
+          }
+        }
+        if (!hasTarget) return false;
+        const spawnX = x + Math.cos(backwardAngle) * 14;
+        const spawnY = y + Math.sin(backwardAngle) * 14;
+        new Stinger(spawnX, spawnY, damage, range, speed,
+          spawnX + Math.cos(backwardAngle) * range,
+          spawnY + Math.sin(backwardAngle) * range);
+        return true;
+      },
+    );
+    World.addSystem('player', this.player);
+
+    this.camera = new Camera({ offset: 120, lerpAngle: 0.12 });
+
+    // Meta upgrades
     this._metaSpeedBonus = (_u.BEE_SPEED_META ?? 0) * 20;
-    if (this._metaSpeedBonus)  this.player._speed += this._metaSpeedBonus;
+    if (this._metaSpeedBonus) this.player._speed += this._metaSpeedBonus;
     if (_u.BEE_HP_META)       { this.player.maxHp += _u.BEE_HP_META * 2; this.player.hp = this.player.maxHp; }
     if (_u.HIVE_HP_META)      { this.hive.maxHp   += _u.HIVE_HP_META * 5; this.hive.hp  = this.hive.maxHp; }
     if (_u.HIVE_STORAGE_META) this.resources.setHoneyStorage(HIVE.HONEY_STORAGE + _u.HIVE_STORAGE_META * 50);
-
-    if (_u.START_WORKER) {
-      const _w = new WorkerBee(this, this.hiveX, this.hiveY);
-      _w.init(this.hive, this.flowers);
-      this.workers.add(_w);
-    }
+    if (_u.START_WORKER)      new WorkerBee(this.hiveX, this.hiveY);
+    if (_u.START_ARMOR)       this.player.armor = 1;
+    if (_u.START_HONEY)       { this.resources.addPendingSap(30); this.resources.convertSap(30); }
+    if (_u.START_GUARD)       new GuardPost(this.hiveX + 80, this.hiveY);
+    if (_u.START_SOLDIER)     this._recruitSoldier(true);
     this._metaSoldierDmg = _u.SOLDIER_DMG_META ?? 0;
 
-    if (_u.START_ARMOR)  this.player.armor = 1;
-    if (_u.START_HONEY)  { this.resources.addPendingSap(30); this.resources.convertSap(30); }
-    if (_u.START_GUARD)  {
-      const _post = new GuardPost(this, this.hiveX + 80, this.hiveY);
-      this._towerList.push(_post);
-    }
-    if (_u.START_SOLDIER) this._recruitSoldier(true);
-
-    this.physics.add.overlap(this.stingers, this.wasps, (stinger, wasp) => {
-      if (!stinger.active || !wasp.active) return;
-      stinger.release();
-      SoundSynth.play('hit');
-      if (wasp.takeDamage(stinger.damage)) {
-        this._dropPickup(wasp.x, wasp.y, wasp.honeyCarried ? 'honey' : 'xp');
-        if (Math.random() < 0.10) this._dropPickup(wasp.x, wasp.y, 'health');
-      }
-    });
-
-    this.waspHiveSystem.hives.forEach(wh => {
-      this.physics.add.overlap(wh, this.stingers, (waspHive, stinger) => {
-        if (!stinger.active) return;
-        stinger.release();
-        this.waspHiveSystem.onHiveAttacked(this._gameTime, waspHive);
-        if (waspHive.takeDamage(stinger.damage)) {
-          this.waspHiveSystem.onHiveDestroyed();
-        }
-      });
-    });
-
-    this.physics.add.overlap(this.player, this.waspHiveSystem.hives, (player, waspHive) => {
-      if (!player.isDashing) return;
-      const now = this._gameTime;
-      if (now - (waspHive._lastDashHit || 0) < 500) return;
-      waspHive._lastDashHit = now;
-      this.waspHiveSystem.onHiveAttacked(now);
-      if (waspHive.takeDamage(1)) {
-        this._endGame(true, true);
-      }
-    });
-
-    this.physics.add.overlap(this.player, this.breakables, (player, breakable) => {
-      if (!player.isDashing) return;
-      const now = this._gameTime;
-      if (now - (breakable._lastDashHit || 0) < 500) return;
-      breakable._lastDashHit = now;
-      breakable.takeDamage(1);
-    });
-
-    this.physics.add.overlap(this.wasps, this.player, (a, b) => {
-      const wasp = a.waspType ? a : b;
-      const bee  = a.waspType ? b : a;
-      if (!bee.alive) return;
-      
-      const now = this._gameTime;
-
-      // Dash attack logic
-      if (bee.isDashing) {
-        if (now - (wasp.lastDashedHit || 0) < 500) return;
-        wasp.lastDashedHit = now;
-        if (wasp.takeDamage(1)) {
-          this._dropPickup(wasp.x, wasp.y, wasp.honeyCarried ? 'honey' : 'xp');
-          if (Math.random() < 0.10) this._dropPickup(wasp.x, wasp.y, 'health');
-        }
-        return;
-      }
-
-      if (wasp.waspType !== 'hunter') return;
-      if (now - wasp.lastHit < WASP.HIT_COOLDOWN) return;
-      wasp.lastHit = now;
-
-      const sap = this.resources.getSapCarried('player');
-      if (sap > 0) {
-        this.resources.stealSap('player', Math.max(1, WASP.SAP_STEAL - this.player.armor));
-        this.waspHiveSystem.onHoneyStolen(Math.max(1, WASP.SAP_STEAL - this.player.armor));
-      } else {
-        if (bee.takeDamage(WASP.DAMAGE)) this._onPlayerDeath();
-      }
-    });
-
-    this.physics.add.overlap(this.wasps, this.hive, (a, b) => {
-      const wasp = a.waspType ? a : b;
-      const hive = a.waspType ? b : a;
-      if (wasp.isRetreating) return;
-      
-      const now = this._gameTime;
-      if (now - wasp.lastHit < WASP.HIT_COOLDOWN) return;
-      wasp.lastHit = now;
-
-      if (this.resources.getHoney() > 0) {
-        this._burst(hive.x, hive.y, 0xff8800, 8);
-        this._burst(hive.x, hive.y, 0x6b3a1f, 5);
-        SoundSynth.play('hive-hit');
-        this.resources.stealHoney(WASP.HONEY_STEAL);
-        wasp.honeyCarried = WASP.HONEY_STEAL;
-        if (typeof wasp.retreat === 'function') wasp.retreat();
-      } else {
-        this._burst(hive.x, hive.y, 0x6b3a1f, 6);
-        SoundSynth.play('hive-hit');
-        if (hive.takeDamage(WASP.DAMAGE)) this._endGame(false);
-      }
-    });
-
-    this._bKey   = this.input.keyboard.addKey('B');
-    this._hKey   = this.input.keyboard.addKey('H');
-    this._escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this._gpStartWasDown = false;
-    this._paused = false;
-    this._placing = null;
-    this._ghost = null;
-
-    this.buildMenu = new BuildMenu(this, (key) => {
-      if (this.player) this.player._gpAWasDown = true;
-      if (key === 'recruit-worker') {
-        this._recruitWorker();
-      } else if (key === 'recruit-soldier') {
-        this._recruitSoldier();
-      } else {
-        this._enterPlacementMode(key);
-      }
-    });
-
-    this.levelUpMenu = new LevelUpMenu(this, (key) => {
-      if (this.upgrades.purchase(key)) {
-        this._applyUpgrade(key);
-      }
-      if (this.player) this.player._gpAWasDown = true;
-    });
-
-    this.input.mouse.disableContextMenu();
-    this.hud = new HUD(this, this.resources, this.hive, this.player, this.wind);
-    this._touchControls = new TouchControls(this, this.player);
     this._spawnPassiveEntities();
-
-    if (this._playground) this._createPlaygroundUI();
   }
 
-  update(time, delta) {
-    const _gp  = this.input.gamepad;
-    const _pad = _gp?.total > 0 ? _gp.gamepads.find(p => p?.connected) : null;
+  update(dt, time) {
+    if (this._ended) return;
 
-    if (this.levelUpMenu.visible) {
-      this.physics.world.pause();
-      if (_pad) this.levelUpMenu.gpUpdate(_pad);
-      return;
-    }
-
-    // Pause toggle — Escape or gamepad Start (button 9)
-    const justEsc  = Phaser.Input.Keyboard.JustDown(this._escKey);
-    const startDown = _pad?.buttons[9]?.pressed ?? false;
-    if ((justEsc || (startDown && !this._gpStartWasDown)) && !this._ended) {
-      if (this._paused) this._hidePause(); else this._showPause();
-    }
-    this._gpStartWasDown = startDown;
-
-    if (this._paused) {
-      if (_pad) this._updatePauseGamepad(_pad);
-      return;
-    }
-
-    // Build menu or placement — freeze game, handle only those inputs
-    if (this.buildMenu.visible || this._placing !== null) {
-      this.physics.world.pause();
-      if (_pad && this.buildMenu.visible) this.buildMenu.gpUpdate(_pad);
-      if (this._placing && _pad) {
-        const DEAD = 0.15, SPEED = 600;
-        const rx = Math.abs(_pad.rightStick.x) > DEAD ? _pad.rightStick.x : 0;
-        const ry = Math.abs(_pad.rightStick.y) > DEAD ? _pad.rightStick.y : 0;
-        if (this._ghost && (rx !== 0 || ry !== 0)) {
-          this._ghost.x = Phaser.Math.Clamp(this._ghost.x + rx * SPEED * (delta / 1000), 0, WORLD.WIDTH);
-          this._ghost.y = Phaser.Math.Clamp(this._ghost.y + ry * SPEED * (delta / 1000), 0, WORLD.HEIGHT);
-        }
-        const aDown = _pad.buttons[0]?.pressed ?? false;
-        if (aDown && !this._gpPlaceAWas) {
-          if (this._ghost) this._placeTower(this._placing, this._ghost.x, this._ghost.y);
-          this._cancelPlacement();
-        }
-        this._gpPlaceAWas = aDown;
-        const bDown = _pad.buttons[1]?.pressed ?? false;
-        if (bDown && !this._gpPlaceBWas) {
-          this._cancelPlacement();
-          if (this.player) this.player._gpBWasDown = true;
-        }
-        this._gpPlaceBWas = bDown;
-      }
-      this._touchControls.update();
-      return;
-    }
-
-    this.physics.world.resume();
-    this.physics.world.timeScale = 1;
-    this.time.timeScale = 1;
-
-    const scaledDelta = delta;
+    const scaledDelta = dt * 1000;
     this._gameTime += scaledDelta;
     this._playTime += scaledDelta;
-
-    const workerCount = this.workers.getChildren().filter(w => w.alive).length;
-    if (this.hud) this.hud.update(this._playTime, this.waveManager.getWaveNumber(), workerCount, this.level, this.xp, this.reqXp, this.waspHiveSystem.honeyStolen, this._runDuration);
 
     if (!this._playground && this._playTime >= this._runDuration) {
       this._endGame(true);
       return;
     }
 
-    // Wind computed first so wasps can counter it when they have no target
+    if (this._gameTime - this._lastSapConversionAt >= this._sapConversionInterval) {
+      this.resources.convertSap(1);
+      this._lastSapConversionAt = this._gameTime;
+    }
+
+    if (this._gameTime - this._lastBreakableSpawnAt >= BREAKABLE.SPAWN_DELAY) {
+      this._spawnBreakable();
+      this._lastBreakableSpawnAt = this._gameTime;
+    }
+
     this.wind.update(this._gameTime);
     const windVec = this.wind.getVector();
 
     this.pollination.update(this._gameTime);
-    this.flowers.getChildren().forEach(f => f.update(this._gameTime));
-    if (this.player.alive) this.player.update(this._gameTime, scaledDelta);
+
+    for (const f of World.getByTag('flower')) {
+      if (f.active) f.update(this._gameTime);
+    }
+
+    if (this.player.alive) this.player.update(this._gameTime, dt);
 
     // Poison honey attraction
-    this._towerList.forEach(tower => {
-      if (tower.towerType !== 'poison-honey' || !tower.active) return;
-      this.wasps.getChildren().forEach(wasp => {
-        if (!wasp.active || wasp.isRetreating || wasp.poisonCarried) return;
-        const dist = Phaser.Math.Distance.Between(wasp.x, wasp.y, tower.x, tower.y);
-        if (dist < TOWER.POISON_HONEY_RADIUS) {
+    for (const tower of World.getByTag('tower')) {
+      if (tower.towerType !== 'poison-honey' || !tower.active) continue;
+      for (const wasp of World.getByTag('wasp')) {
+        if (!wasp.active || wasp.isRetreating || wasp.poisonCarried) continue;
+        const d = dist(wasp.x, wasp.y, tower.x, tower.y);
+        if (d < TOWER.POISON_HONEY_RADIUS) {
           wasp._poisonTarget = tower;
         } else if (wasp._poisonTarget === tower) {
           wasp._poisonTarget = null;
         }
-        if (dist < 40) {
+        if (d < 40) {
           tower.consume();
           wasp.poisonCarried = true;
           wasp._poisonTarget = null;
           if (typeof wasp.retreat === 'function') wasp.retreat();
         }
-      });
-    });
+      }
+    }
 
-    this.wasps.getChildren().forEach(w => w.update(this._gameTime, windVec));
+    for (const w of World.getByTag('wasp')) {
+      if (w.active) w.update(this._gameTime, dt, windVec);
+    }
 
-    // Wasps steal dropped honey from the ground
-    this.wasps.getChildren().forEach(wasp => {
-      if (!wasp.active) return;
-      this.pickups.getChildren().forEach(pickup => {
-        if (!pickup.active || pickup.type !== 'honey') return;
-        if (Phaser.Math.Distance.Between(wasp.x, wasp.y, pickup.x, pickup.y) < 30) {
+    // Wasps steal dropped honey pickups
+    for (const wasp of World.getByTag('wasp')) {
+      if (!wasp.active) continue;
+      for (const pickup of World.getByTag('pickup')) {
+        if (!pickup.active || pickup.type !== 'honey') continue;
+        if (dist(wasp.x, wasp.y, pickup.x, pickup.y) < 30) {
           this.waspHiveSystem.onHoneyStolen(PICKUP.HONEY_AMOUNT);
-          pickup.release();
+          pickup.destroy();
         }
-      });
-    });
+      }
+    }
 
-    this.workers.getChildren().forEach(w => {
-      if (w.alive) w.update(this._gameTime, scaledDelta, this.resources);
-    });
+    for (const w of World.getByTag('worker')) {
+      if (w.alive && w.active) w.update(this._gameTime, dt);
+    }
 
-    this._towerList.forEach(tower => {
-      if (tower.towerType === 'resin')  tower.update(this._gameTime, this.wasps);
-      else if (tower.towerType === 'guard' && tower.active) tower.guard.update(this._gameTime, this.wasps, this.stingers);
-    });
+    for (const tower of World.getByTag('tower')) {
+      if (!tower.active) continue;
+      if (tower.towerType === 'resin') tower.update(this._gameTime);
+      else if (tower.towerType === 'guard') tower.guard?.update(this._gameTime, dt);
+    }
 
-    // Soldiers
-    this.soldiers.getChildren().forEach(s => {
-      if (s.alive) s.update(this._gameTime, this.player, this.wasps, this.breakables, this.stingers);
-    });
+    for (const s of World.getByTag('soldier')) {
+      if (s.alive && s.active) s.update(this._gameTime, dt);
+    }
 
-    // Butterflies
-    this.butterflies.getChildren().forEach(b =>
-      b.update(this._gameTime, scaledDelta, this.player, this.pollination, this.flowers)
-    );
+    for (const b of World.getByTag('butterfly')) {
+      if (b.active) b.update(this._gameTime, dt);
+    }
 
-    // Spiders
-    const _spiderAnchors = [
-      ...this.flowers.getChildren().filter(f => f.active && f.lifecycle !== 'young'),
-      ...this._decoList.filter(d => d.active),
-      ...this.breakables.getChildren().filter(b => b.active),
+    const spiderAnchors = [
+      ...World.getByTag('flower').filter(f => f.active && f.lifecycle !== 'young'),
+      ...World.getByTag('breakable').filter(b => b.active),
     ];
-    this.spiders.getChildren().forEach(s =>
-      s.update(this._gameTime, scaledDelta, _spiderAnchors, (f1, f2) => this._placeWeb(f1, f2))
-    );
+    for (const s of World.getByTag('spider')) {
+      if (s.active) s.update(this._gameTime, dt, spiderAnchors, (f1, f2) => this._placeWeb(f1, f2));
+    }
 
-    // Apply wind to all flying entities (adds to velocity already set this frame)
     this._applyWind(windVec);
 
-    // Web trapping (runs after wind so trapped entities don't drift)
     const trappableEntities = [
       ...(this.player.alive ? [this.player] : []),
-      ...this.wasps.getChildren().filter(w => w.active),
-      ...this.workers.getChildren().filter(w => w.alive && w.active),
+      ...World.getByTag('wasp').filter(w => w.active),
+      ...World.getByTag('worker').filter(w => w.active && w.alive),
     ];
-    this._webList = this._webList.filter(w => {
-      if (!w.active) return false;
-      return !w.update(this._gameTime, trappableEntities);
-    });
-
-    this._checkWorkerHunterCollisions(this._gameTime);
-    this._checkRaiderTowerCollisions(this._gameTime);
-
-    if (Phaser.Input.Keyboard.JustDown(this._bKey)) {
-      if (this.buildMenu.visible) this.buildMenu.hide();
-      else this.buildMenu.show();
+    for (const web of World.getByTag('web')) {
+      web.update(this._gameTime, trappableEntities);
     }
-    
-    if (this._playground && Phaser.Input.Keyboard.JustDown(this._hKey)) {
-      this.resources.addPendingSap(100);
-      this.resources.convertSap(100);
+
+    // Physics update for all moving entities
+    const seen = new Set();
+    for (const tag of ['bee', 'wasp', 'stinger', 'gem', 'pickup', 'spider', 'butterfly', 'breakable']) {
+      for (const e of World.getByTag(tag)) {
+        if (seen.has(e) || !e.active) continue;
+        seen.add(e);
+        physicsUpdate(e, dt, BOUNDS);
+      }
     }
+
+    this.camera.follow(this.player, dt);
+
+    this._checkPlayerFlowerOverlap();
+    this._checkPlayerHiveOverlap();
+    this._checkPlayerPickupOverlap();
+    this._checkStingerWaspOverlap();
+    this._checkStingerBreakableOverlap();
+    this._checkEnemyStingerPlayerOverlap();
+    this._checkEnemyStingerWorkerOverlap();
+    this._checkEnemyStingerSoldierOverlap();
+    this._checkStingerWaspHiveOverlap();
+    this._checkPlayerWaspHiveOverlap();
+    this._checkPlayerBreakableOverlap();
+    this._checkPlayerWaspOverlap();
+    this._checkWaspHiveOverlap();
+    this._checkWorkerHunterCollisions();
+    this._checkRaiderTowerCollisions();
 
     if (!this._playground) {
       const wave = this.waveManager.update(this._playTime);
       if (wave) this.waspHiveSystem.spawnWave(wave);
     }
     this.waspHiveSystem.update(this._gameTime);
-    if (_pad && this._playground && this._pgBtns) this._updatePlaygroundGamepad(_pad);
-    this._touchControls.update();
+
+    if (this.hive && this.hive.hp <= 0) this._endGame(false);
   }
 
-  _dropPickup(x, y, type) {
-    let p = this.pickups.getFirstDead(false);
-    if (!p) { p = new Pickup(this, x, y); this.pickups.add(p); }
-    p.fire(x, y, type);
-  }
-
-  _showPause() {
-    if (this._pauseObjs) return;
-    this._paused = true;
-    this.physics.world.pause();
-    if (this.buildMenu.visible) this.buildMenu.hide();
-
-    const cx = 640, cy = 360, D = 500;
-    const objs = [];
-    const add = obj => { objs.push(obj); return obj; };
-
-    add(this.add.rectangle(cx, cy, 1280, 720, 0x000000, 0.72).setDepth(D - 1).setScrollFactor(0).setInteractive());
-    add(this.add.text(cx, cy - 150, 'PAUSED', {
-      fontSize: '52px', color: '#ffd700', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(D).setScrollFactor(0));
-
-    const mkBtn = (label, y, color = '#ffd700') => {
-      const b = add(this.add.text(cx, y, label, {
-        fontSize: '30px', color, fontFamily: 'monospace',
-      }).setOrigin(0.5).setDepth(D).setScrollFactor(0).setInteractive({ useHandCursor: true }));
-      b._col = color;
-      b.on('pointerover', () => b.setColor('#ffffff'));
-      b.on('pointerout',  () => b.setColor(b._col));
-      return b;
-    };
-
-    const btnResume   = mkBtn('[ RESUME ]',   cy - 50);
-    const btnControls = mkBtn('[ CONTROLS ]', cy + 20);
-    const btnRestart  = mkBtn('[ RESTART ]',  cy + 90);
-    const btnMenu     = mkBtn('[ MENU ]',     cy + 160, '#aaaaaa');
-
-    btnResume.on('pointerdown',   () => this._hidePause());
-    btnControls.on('pointerdown', () => this._showPauseControls());
-    btnRestart.on('pointerdown',  () => { this._hidePause(); this.scene.start('GameScene', { playground: this._playground }); });
-    btnMenu.on('pointerdown',     () => this.scene.start('MenuScene'));
-
-    this._pauseBtns    = [btnResume, btnControls, btnRestart, btnMenu];
-    this._pauseActions = [
-      () => this._hidePause(),
-      () => this._showPauseControls(),
-      () => { this._hidePause(); this.scene.start('GameScene', { playground: this._playground }); },
-      () => this.scene.start('MenuScene'),
-    ];
-    this._pauseSelIdx    = 0;
-    this._gpPauseAWas    = false;
-    this._gpPauseDirWas  = false;
-    this._gpPauseBWas    = false;
-    this._gpRefreshPause();
-    this._pauseObjs = objs;
-  }
-
-  _gpRefreshPause() {
-    this._pauseBtns?.forEach((b, i) => b.setColor(i === this._pauseSelIdx ? '#ffffff' : b._col));
-  }
-
-  _updatePauseGamepad(pad) {
-    if (this._pauseCtrlObjs) {
-      const bDown = pad.buttons[1]?.pressed ?? false;
-      if (bDown && !this._gpPauseBWas) this._hidePauseControls();
-      this._gpPauseBWas = bDown;
-      return;
+  _checkPlayerFlowerOverlap() {
+    if (!this.player.alive) return;
+    for (const flower of World.getByTag('flower')) {
+      if (!flower.active || dist(this.player.x, this.player.y, flower.x, flower.y) > 30) continue;
+      const space = this.player._sapCapacity - this.resources.getSapCarried('player');
+      if (space > 0 && flower.sapRemaining > 0) {
+        if (flower.collectPollen()) this.pollination.pollinate({ x: flower.x, y: flower.y }, this._gameTime);
+        const taken = flower.collectSap(space);
+        if (taken > 0) {
+          const now = this._gameTime;
+          if (!flower._lastBurst || now - flower._lastBurst > 400) {
+            SoundSynth.play('pickup');
+            flower._lastBurst = now;
+          }
+        }
+        this.resources.addSap('player', taken, this.player._sapCapacity);
+      } else if (flower.sapRemaining <= 0) {
+        if (flower.collectPollen()) this.pollination.pollinate({ x: flower.x, y: flower.y }, this._gameTime);
+      }
     }
-    const dirDown = pad.buttons[12]?.pressed || pad.buttons[13]?.pressed ||
-                    Math.abs(pad.leftStick.y) > 0.4;
-    if (dirDown && !this._gpPauseDirWas) {
-      const dy = (pad.buttons[12]?.pressed || pad.leftStick.y < -0.4) ? -1 : 1;
-      this._pauseSelIdx = (this._pauseSelIdx + dy + this._pauseBtns.length) % this._pauseBtns.length;
-      this._gpRefreshPause();
+  }
+
+  _checkPlayerHiveOverlap() {
+    if (!this.player.alive || !this.hive?.active) return;
+    if (dist(this.player.x, this.player.y, this.hive.x, this.hive.y) > 60) return;
+    if (this.resources.getSapCarried('player') > 0) {
+      SoundSynth.play('deposit');
+      this.resources.depositSap('player');
     }
-    this._gpPauseDirWas = dirDown;
-    const aDown = pad.buttons[0]?.pressed ?? false;
-    if (aDown && !this._gpPauseAWas) this._pauseActions[this._pauseSelIdx]?.();
-    this._gpPauseAWas = aDown;
-    const bDown = pad.buttons[1]?.pressed ?? false;
-    if (bDown && !this._gpPauseBWas) this._hidePause();
-    this._gpPauseBWas = bDown;
   }
 
-  _hidePause() {
-    if (!this._pauseObjs) return;
-    this._hidePauseControls();
-    this._pauseObjs.forEach(o => o.destroy());
-    this._pauseObjs = null;
-    this._paused = false;
-    this.physics.world.resume();
-    if (this.player) this.player._gpAWasDown = true;
+  _checkPlayerPickupOverlap() {
+    if (!this.player.alive) return;
+    for (const pickup of World.getByTag('pickup')) {
+      if (!pickup.active) continue;
+      if (dist(this.player.x, this.player.y, pickup.x, pickup.y) <= 20) pickup.onCollect(this.player);
+    }
   }
 
-  _showPauseControls() {
-    if (this._pauseCtrlObjs) return;
-    const cx = 640, cy = 360, D = 501;
-    const objs = [];
-    const add = obj => { objs.push(obj); return obj; };
-
-    add(this.add.rectangle(cx, cy, 800, 530, 0x000000, 0.97).setDepth(D).setScrollFactor(0));
-    add(this.add.text(cx, cy - 230, 'CONTROLS', {
-      fontSize: '30px', color: '#ffd700', fontFamily: 'monospace', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(D).setScrollFactor(0));
-
-    const s = { fontSize: '17px', color: '#ffffff', fontFamily: 'monospace' };
-    const h = { ...s, color: '#ffdd44', fontSize: '19px', fontStyle: 'bold' };
-    const lh = 32, top = cy - 175, col1 = cx - 330, col2 = cx + 60;
-
-    const kbLines = ['KEYBOARD', 'WASD / Arrows  —  Move', 'Space          —  Dash', 'Right-click    —  Aim', 'B              —  Build menu', 'Esc            —  Pause'];
-    const gpLines = ['CONTROLLER', 'Left stick     —  Move', 'A button       —  Dash', 'Right stick    —  Aim', 'B button       —  Build menu', 'Start          —  Pause'];
-
-    kbLines.forEach((label, i) =>
-      add(this.add.text(col1, top + i * lh, label, i === 0 ? h : s).setOrigin(0, 0.5).setDepth(D).setScrollFactor(0))
-    );
-    gpLines.forEach((label, i) =>
-      add(this.add.text(col2, top + i * lh, label, i === 0 ? h : s).setOrigin(0, 0.5).setDepth(D).setScrollFactor(0))
-    );
-
-    const btnBack = add(this.add.text(cx, cy + 225, '[ BACK ]', {
-      fontSize: '22px', color: '#ff4444', fontFamily: 'monospace',
-    }).setOrigin(0.5).setDepth(D).setScrollFactor(0).setInteractive({ useHandCursor: true }));
-    btnBack.on('pointerover', () => btnBack.setColor('#ff8888'));
-    btnBack.on('pointerout',  () => btnBack.setColor('#ff4444'));
-    btnBack.on('pointerdown', () => this._hidePauseControls());
-
-    this._pauseCtrlObjs = objs;
+  _checkStingerWaspOverlap() {
+    for (const stinger of World.getByTag('player-stinger')) {
+      if (!stinger.active) continue;
+      for (const wasp of World.getByTag('wasp')) {
+        if (!wasp.active || dist(stinger.x, stinger.y, wasp.x, wasp.y) > 12) continue;
+        stinger.destroy();
+        SoundSynth.play('hit');
+        if (wasp.takeDamage(stinger.damage)) {
+          new Pickup(wasp.x, wasp.y, wasp.honeyCarried ? 'honey' : 'xp');
+          if (Math.random() < 0.10) new Pickup(wasp.x, wasp.y, 'health');
+        }
+        break;
+      }
+    }
   }
 
-  _hidePauseControls() {
-    if (!this._pauseCtrlObjs) return;
-    this._pauseCtrlObjs.forEach(o => o.destroy());
-    this._pauseCtrlObjs = null;
+  _checkStingerBreakableOverlap() {
+    for (const stinger of World.getByTag('player-stinger')) {
+      if (!stinger.active) continue;
+      for (const b of World.getByTag('breakable')) {
+        if (!b.active || dist(stinger.x, stinger.y, b.x, b.y) > 20) continue;
+        stinger.destroy();
+        b.takeDamage(stinger.damage);
+        break;
+      }
+    }
   }
 
-  _burst(x, y, color, count = 8) {
-    const e = this.add.particles(x, y, 'particle', {
-      speed: { min: 60, max: 160 },
-      scale: { start: 0.5, end: 0 },
-      alpha: { start: 1, end: 0 },
-      lifespan: 450,
-      tint: color,
-      emitting: false,
-    });
-    e.explode(count);
-    this.time.delayedCall(500, () => { if (e?.scene) e.destroy(); });
+  _checkEnemyStingerPlayerOverlap() {
+    if (!this.player.alive) return;
+    for (const stinger of World.getByTag('enemy-stinger')) {
+      if (!stinger.active) continue;
+      if (dist(stinger.x, stinger.y, this.player.x, this.player.y) <= 12) {
+        stinger.destroy();
+        if (this.player.takeDamage(stinger.damage)) this._onPlayerDeath();
+      }
+    }
+  }
+
+  _checkEnemyStingerWorkerOverlap() {
+    for (const stinger of World.getByTag('enemy-stinger')) {
+      if (!stinger.active) continue;
+      for (const worker of World.getByTag('worker')) {
+        if (!worker.active || !worker.alive || dist(stinger.x, stinger.y, worker.x, worker.y) > 12) continue;
+        stinger.destroy();
+        worker.takeDamage(stinger.damage);
+        break;
+      }
+    }
+  }
+
+  _checkEnemyStingerSoldierOverlap() {
+    for (const stinger of World.getByTag('enemy-stinger')) {
+      if (!stinger.active) continue;
+      for (const soldier of World.getByTag('soldier')) {
+        if (!soldier.active || !soldier.alive || dist(stinger.x, stinger.y, soldier.x, soldier.y) > 12) continue;
+        stinger.destroy();
+        soldier.takeDamage(stinger.damage);
+        break;
+      }
+    }
+  }
+
+  _checkStingerWaspHiveOverlap() {
+    for (const stinger of World.getByTag('player-stinger')) {
+      if (!stinger.active) continue;
+      for (const wh of this.waspHiveSystem.hives) {
+        if (wh.hp <= 0 || dist(stinger.x, stinger.y, wh.x, wh.y) > 30) continue;
+        stinger.destroy();
+        this.waspHiveSystem.onHiveAttacked(this._gameTime, wh);
+        if (wh.takeDamage(stinger.damage)) this.waspHiveSystem.onHiveDestroyed();
+        break;
+      }
+    }
+  }
+
+  _checkPlayerWaspHiveOverlap() {
+    if (!this.player.alive || !this.player.isDashing) return;
+    const now = this._gameTime;
+    for (const wh of this.waspHiveSystem.hives) {
+      if (wh.hp <= 0 || now - (wh._lastDashHit || 0) < 500) continue;
+      if (dist(this.player.x, this.player.y, wh.x, wh.y) <= 40) {
+        wh._lastDashHit = now;
+        this.waspHiveSystem.onHiveAttacked(now);
+        if (wh.takeDamage(1)) this._endGame(true, true);
+      }
+    }
+  }
+
+  _checkPlayerBreakableOverlap() {
+    if (!this.player.alive || !this.player.isDashing) return;
+    const now = this._gameTime;
+    for (const b of World.getByTag('breakable')) {
+      if (!b.active || now - (b._lastDashHit || 0) < 500) continue;
+      if (dist(this.player.x, this.player.y, b.x, b.y) <= 30) {
+        b._lastDashHit = now;
+        b.takeDamage(1);
+      }
+    }
+  }
+
+  _checkPlayerWaspOverlap() {
+    if (!this.player.alive) return;
+    const now = this._gameTime;
+    for (const wasp of World.getByTag('wasp')) {
+      if (!wasp.active || dist(this.player.x, this.player.y, wasp.x, wasp.y) > 24) continue;
+
+      if (this.player.isDashing) {
+        if (now - (wasp.lastDashedHit || 0) < 500) continue;
+        wasp.lastDashedHit = now;
+        if (wasp.takeDamage(1)) {
+          new Pickup(wasp.x, wasp.y, wasp.honeyCarried ? 'honey' : 'xp');
+          if (Math.random() < 0.10) new Pickup(wasp.x, wasp.y, 'health');
+        }
+        continue;
+      }
+
+      if (wasp.waspType !== 'hunter') continue;
+      if (now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
+      wasp.lastHit = now;
+      const sap = this.resources.getSapCarried('player');
+      if (sap > 0) {
+        this.resources.stealSap('player', Math.max(1, WASP.SAP_STEAL - this.player.armor));
+        this.waspHiveSystem.onHoneyStolen(Math.max(1, WASP.SAP_STEAL - this.player.armor));
+      } else {
+        if (this.player.takeDamage(WASP.DAMAGE)) this._onPlayerDeath();
+      }
+    }
+  }
+
+  _checkWaspHiveOverlap() {
+    const hive = this.hive;
+    if (!hive?.active) return;
+    const now = this._gameTime;
+    for (const wasp of World.getByTag('wasp')) {
+      if (!wasp.active || wasp.isRetreating || now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
+      if (dist(wasp.x, wasp.y, hive.x, hive.y) > 50) continue;
+      wasp.lastHit = now;
+      if (this.resources.getHoney() > 0) {
+        SoundSynth.play('hive-hit');
+        this.resources.stealHoney(WASP.HONEY_STEAL);
+        wasp.honeyCarried = WASP.HONEY_STEAL;
+        if (typeof wasp.retreat === 'function') wasp.retreat();
+      } else {
+        SoundSynth.play('hive-hit');
+        if (hive.takeDamage(WASP.DAMAGE)) this._endGame(false);
+      }
+    }
+  }
+
+  _checkWorkerHunterCollisions() {
+    const now = this._gameTime;
+    for (const wasp of World.getByTag('wasp')) {
+      if (!wasp.active || wasp.waspType !== 'hunter' || now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
+      for (const worker of World.getByTag('worker')) {
+        if (!worker.active || !worker.alive || dist(wasp.x, wasp.y, worker.x, worker.y) > 20) continue;
+        wasp.lastHit = now;
+        if (worker._sap > 0) worker._sap = Math.max(0, worker._sap - WASP.SAP_STEAL);
+        else worker.takeDamage(WASP.DAMAGE);
+      }
+      for (const soldier of World.getByTag('soldier')) {
+        if (!soldier.active || !soldier.alive || dist(wasp.x, wasp.y, soldier.x, soldier.y) > 30) continue;
+        wasp.lastHit = now;
+        soldier.takeDamage(WASP.DAMAGE);
+      }
+    }
+  }
+
+  _checkRaiderTowerCollisions() {
+    const now = this._gameTime;
+    for (const wasp of World.getByTag('wasp')) {
+      if (!wasp.active || wasp.waspType !== 'raider' || wasp.isRetreating || now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
+      for (const tower of World.getByTag('guard-post')) {
+        if (!tower.active || tower.hp <= 0 || dist(wasp.x, wasp.y, tower.x, tower.y) > 32) continue;
+        wasp.lastHit = now;
+        tower.takeDamage(WASP.DAMAGE);
+        wasp.retreat();
+      }
+    }
+  }
+
+  _applyWind(windVec) {
+    if (this.player.alive) { this.player.vx += windVec.x; this.player.vy += windVec.y; }
+    for (const w of World.getByTag('wasp')) { if (w.active) { w.vx += windVec.x; w.vy += windVec.y; } }
+    for (const w of World.getByTag('worker')) { if (w.active && w.alive) { w.vx += windVec.x; w.vy += windVec.y; } }
+    for (const b of World.getByTag('butterfly')) { if (b.active) { b.vx += windVec.x; b.vy += windVec.y; } }
   }
 
   _collectXp(val) {
@@ -718,330 +529,97 @@ export default class GameScene extends Phaser.Scene {
       this.level++;
       this._xpIncrement = Math.floor(this._xpIncrement * XP.REQ_MULTIPLIER);
       this.reqXp = this.xpFloor + this._xpIncrement;
-      if (this.buildMenu.visible) this.buildMenu.hide();
-      this.levelUpMenu.show(this.upgrades);
     }
   }
 
   _spawnFlower(x, y, initialBloom = false) {
-    const type = pickFlowerType(Phaser.Math.Between(1, 100));
-    const f = new Flower(this, x, y, type, initialBloom);
+    const type = pickFlowerType(randInt(1, 100));
+    const f = new Flower(x, y, type, initialBloom);
     f.onDead = () => {
-      this.time.delayedCall(FLOWER.RESPAWN_DELAY, () => {
-        if (!this._ended) {
-          const rx = Phaser.Math.Between(100, WORLD.WIDTH - 100);
-          const ry = Phaser.Math.Between(100, WORLD.HEIGHT - 100);
-          this._spawnFlower(rx, ry);
-        } else {
-          this.flowers.refresh();
-        }
+      World.after(FLOWER.RESPAWN_DELAY, () => {
+        if (!this._ended) this._spawnFlower(randInt(100, WORLD.WIDTH - 100), randInt(100, WORLD.HEIGHT - 100));
       });
     };
-    this.flowers.add(f);
-    this.flowers.refresh();
   }
 
   _spawnInitialFlowers() {
     for (let i = 0; i < FLOWER.INITIAL_COUNT; i++) {
-      const x = Phaser.Math.Between(100, WORLD.WIDTH - 100);
-      const y = Phaser.Math.Between(100, WORLD.HEIGHT - 100);
-      this._spawnFlower(x, y, true);
+      this._spawnFlower(randInt(100, WORLD.WIDTH - 100), randInt(100, WORLD.HEIGHT - 100), true);
     }
   }
 
   _spawnPassiveEntities() {
-    for (let i = 0; i < BUTTERFLY.COUNT; i++) {
-      const x = Phaser.Math.Between(200, WORLD.WIDTH - 200);
-      const y = Phaser.Math.Between(200, WORLD.HEIGHT - 200);
-      this.butterflies.add(new Butterfly(this, x, y));
-    }
-    for (let i = 0; i < SPIDER.COUNT; i++) {
-      const x = Phaser.Math.Between(200, WORLD.WIDTH - 200);
-      const y = Phaser.Math.Between(200, WORLD.HEIGHT - 200);
-      this.spiders.add(new Spider(this, x, y));
-    }
-    // Initial breakables
-    for (let i = 0; i < 3; i++) {
-      this._spawnBreakable();
-    }
+    for (let i = 0; i < BUTTERFLY.COUNT; i++) new Butterfly(randInt(200, WORLD.WIDTH - 200), randInt(200, WORLD.HEIGHT - 200));
+    for (let i = 0; i < SPIDER.COUNT; i++) new Spider(randInt(200, WORLD.WIDTH - 200), randInt(200, WORLD.HEIGHT - 200));
+    for (let i = 0; i < 3; i++) this._spawnBreakable();
   }
 
   _spawnBreakable() {
-    if (this.breakables.countActive(true) >= BREAKABLE.MAX_COUNT) return;
-    const x = Phaser.Math.Between(100, WORLD.WIDTH - 100);
-    const y = Phaser.Math.Between(100, WORLD.HEIGHT - 100);
-    const b = new Breakable(this, x, y);
-    this.breakables.add(b);
+    if (World.getByTag('breakable').filter(b => b.active).length >= BREAKABLE.MAX_COUNT) return;
+    new Breakable(randInt(100, WORLD.WIDTH - 100), randInt(100, WORLD.HEIGHT - 100));
   }
 
   _placeWeb(f1, f2) {
-    const activeWebs = this._webList.filter(w => w.active);
-    if (activeWebs.length >= WEB.MAX_COUNT) return;
-    this._webList.push(new WebTrap(this, f1, f2));
-  }
-
-  _applyWind(windVec) {
-    const applyTo = (entity) => {
-      if (!entity.active || !entity.body) return;
-      entity.body.velocity.x += windVec.x;
-      entity.body.velocity.y += windVec.y;
-    };
-    if (this.player.alive) applyTo(this.player);
-    this.wasps.getChildren().forEach(applyTo);
-    this.workers.getChildren().forEach(w => { if (w.alive) applyTo(w); });
-    this.butterflies.getChildren().forEach(applyTo);
-  }
-
-  _checkWorkerHunterCollisions(time) {
-    this.wasps.getChildren().forEach(wasp => {
-      if (!wasp.active || wasp.waspType !== 'hunter') return;
-      if (time - wasp.lastHit < WASP.HIT_COOLDOWN) return;
-      this.workers.getChildren().forEach(worker => {
-        if (!worker.active || !worker.alive) return;
-        if (Phaser.Math.Distance.Between(wasp.x, wasp.y, worker.x, worker.y) > 20) return;
-        wasp.lastHit = time;
-        if (worker._sap > 0) {
-          worker._sap = Math.max(0, worker._sap - WASP.SAP_STEAL);
-        } else {
-          worker.takeDamage(WASP.DAMAGE);
-        }
-      });
-      this.soldiers.getChildren().forEach(soldier => {
-        if (!soldier.active || !soldier.alive) return;
-        if (Phaser.Math.Distance.Between(wasp.x, wasp.y, soldier.x, soldier.y) > 30) return;
-        wasp.lastHit = time;
-        soldier.takeDamage(WASP.DAMAGE);
-      });
-    });
-  }
-
-  _checkRaiderTowerCollisions(time) {
-    this.wasps.getChildren().forEach(wasp => {
-      if (!wasp.active || wasp.waspType !== 'raider' || wasp.isRetreating) return;
-      if (time - wasp.lastHit < WASP.HIT_COOLDOWN) return;
-      this._towerList.forEach(tower => {
-        if (!tower.active || tower.towerType !== 'guard' || tower.hp <= 0) return;
-        if (Phaser.Math.Distance.Between(wasp.x, wasp.y, tower.x, tower.y) > 32) return;
-        wasp.lastHit = time;
-        tower.takeDamage(WASP.DAMAGE);
-        wasp.retreat();
-      });
-    });
+    // WebTrap is not an Entity — import inline to avoid circular dep
+    if (World.getByTag('web').filter(w => w.active).length >= WEB.MAX_COUNT) return;
+    import('../entities/WebTrap.js').then(({ default: WebTrap }) => new WebTrap(f1, f2));
   }
 
   _recruitWorker() {
     if (!this.resources.spendHoney(WORKER.COST)) return;
-    const w = new WorkerBee(this, this.hiveX, this.hiveY);
-    w.init(this.hive, this.flowers);
-    this.workers.add(w);
+    new WorkerBee(this.hiveX, this.hiveY);
   }
 
   _recruitSoldier(free = false) {
     if (!free && !this.resources.spendHoney(SOLDIER.COST)) return;
-    const s = new SoldierBee(this, this.hiveX, this.hiveY);
+    const s = new SoldierBee(this.hiveX, this.hiveY);
     s.damage = SOLDIER.DAMAGE + (this._metaSoldierDmg ?? 0) + this.upgrades.getLevel('SOLDIER_DMG');
     s.fireRate = Math.max(400, SOLDIER.FIRE_RATE - this.upgrades.getLevel('SOLDIER_RATE') * 100);
-    this.soldiers.add(s);
-  }
-
-  _enterPlacementMode(towerKey) {
-    this._placing = towerKey;
-    const ghostMap = {
-      'guard-post':   { key: 'misc', frame: 0, scale: 0.1  },
-      'resin-trap':   { key: 'misc', frame: 8, scale: 0.1  },
-      'poison-honey': { key: 'misc', frame: 9, scale: 0.08 },
-    };
-    const gi = ghostMap[towerKey] || { key: towerKey, frame: 0, scale: 1 };
-    const startX = this.player ? this.player.x : this.cameras.main.scrollX + 640;
-    const startY = this.player ? this.player.y : this.cameras.main.scrollY + 360;
-    this._ghost = this.add.image(startX, startY, gi.key, gi.frame).setAlpha(0.5).setDepth(50).setScale(gi.scale);
-    this._gpPlaceAWas = true;
-    this._gpPlaceBWas = true;
-    this._placeHint = this.add.text(640, 30,
-      'Right stick: move  |  A: place  |  B: cancel',
-      { fontSize: '16px', color: '#ffff88', stroke: '#000', strokeThickness: 3 }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(200);
-    this.input.on('pointermove', this._onPlacementMove, this);
-    this.input.once('pointerdown', this._onPlacementPlace, this);
-    this.input.keyboard.addKey('ESC').once('down', () => this._cancelPlacement());
-  }
-
-  _onPlacementMove(pointer) {
-    if (!this._ghost) return;
-    const wx = this.cameras.main.scrollX + pointer.x;
-    const wy = this.cameras.main.scrollY + pointer.y;
-    this._ghost.setPosition(wx, wy);
-  }
-
-  _onPlacementPlace(pointer) {
-    const wx = this.cameras.main.scrollX + pointer.x;
-    const wy = this.cameras.main.scrollY + pointer.y;
-    this._placeTower(this._placing, wx, wy);
-    this._cancelPlacement();
-  }
-
-  _cancelPlacement() {
-    if (this._ghost) { this._ghost.destroy(); this._ghost = null; }
-    if (this._placeHint) { this._placeHint.destroy(); this._placeHint = null; }
-    this._placing = null;
-    if (this.player) this.player._gpAWasDown = true;
-    this.input.off('pointermove', this._onPlacementMove, this);
-    this.input.off('pointerdown', this._onPlacementPlace, this);
   }
 
   _placeTower(key, x, y) {
-    const costs = {
-      'resin-trap':   TOWER.RESIN_TRAP_COST,
-      'guard-post':   TOWER.GUARD_POST_COST,
-      'poison-honey': TOWER.POISON_HONEY_COST,
-    };
+    const costs = { 'resin-trap': TOWER.RESIN_TRAP_COST, 'guard-post': TOWER.GUARD_POST_COST, 'poison-honey': TOWER.POISON_HONEY_COST };
     if (!this.resources.spendHoney(costs[key])) return;
-    let tower;
-    if (key === 'resin-trap') tower = new ResinTrap(this, x, y);
-    else if (key === 'guard-post') tower = new GuardPost(this, x, y);
-    else if (key === 'poison-honey') tower = new PoisonHoney(this, x, y);
-    if (tower) this._towerList.push(tower);
+    if (key === 'resin-trap')   new ResinTrap(x, y);
+    else if (key === 'guard-post')   new GuardPost(x, y);
+    else if (key === 'poison-honey') new PoisonHoney(x, y);
   }
 
   _applyUpgrade(key) {
     const lvl = this.upgrades.getLevel(key);
     switch (key) {
-      case 'BEE_SPEED':
-        this.player._speed = BEE.SPEED + (this._metaSpeedBonus ?? 0) + lvl * 20;
-        break;
-      case 'BEE_CAPACITY':
-        this.player._sapCapacity = BEE.SAP_CAPACITY + lvl * 3;
-        break;
-      case 'BEE_STINGER_DMG':
-        this.player._stingerDamage = BEE.STINGER_DAMAGE + lvl;
-        break;
-      case 'BEE_STINGER_RATE':
-        this.player._stingerRate = Math.max(200, BEE.STINGER_RATE - lvl * 100);
-        break;
-      case 'BEE_STINGER_DIST':
-        this.player._stingerRange = BEE.STINGER_RANGE + lvl * 40;
-        break;
-      case 'BEE_STINGER_SPEED':
-        this.player._stingerSpeed = BEE.STINGER_SPEED + lvl * 80;
-        break;
+      case 'BEE_SPEED':      this.player._speed = BEE.SPEED + (this._metaSpeedBonus ?? 0) + lvl * 20; break;
+      case 'BEE_CAPACITY':   this.player._sapCapacity = BEE.SAP_CAPACITY + lvl * 3; break;
+      case 'BEE_STINGER_DMG': this.player._stingerDamage = BEE.STINGER_DAMAGE + lvl; break;
+      case 'BEE_STINGER_RATE': this.player._stingerRate = Math.max(200, BEE.STINGER_RATE - lvl * 100); break;
+      case 'BEE_STINGER_DIST': this.player._stingerRange = BEE.STINGER_RANGE + lvl * 40; break;
+      case 'BEE_STINGER_SPEED': this.player._stingerSpeed = BEE.STINGER_SPEED + lvl * 80; break;
       case 'BEE_HP':
         this.player.maxHp = BEE.HP + lvl * 2;
         this.player.hp = Math.min(this.player.hp + 2, this.player.maxHp);
         break;
-      case 'BEE_ARMOR':
-        this.player.armor = lvl;
-        break;
-      case 'HIVE_STORAGE':
-        this.resources.setHoneyStorage(HIVE.HONEY_STORAGE + lvl * 50);
-        break;
-      case 'HIVE_PRODUCTION':
-        this._conversionTimer.reset({
-          delay: Math.max(500, HIVE.SAP_CONVERSION_INTERVAL - lvl * 300),
-          callback: () => this.resources.convertSap(1),
-          loop: true,
-        });
-        break;
+      case 'BEE_ARMOR':      this.player.armor = lvl; break;
+      case 'HIVE_STORAGE':   this.resources.setHoneyStorage(HIVE.HONEY_STORAGE + lvl * 50); break;
+      case 'HIVE_PRODUCTION': this._sapConversionInterval = Math.max(500, HIVE.SAP_CONVERSION_INTERVAL - lvl * 300); break;
       case 'HIVE_HP':
         this.hive.maxHp = HIVE.HP + lvl * 5;
         this.hive.hp = Math.min(this.hive.hp + 5, this.hive.maxHp);
         break;
-      case 'HIVE_WORKERS':
-        const w = new WorkerBee(this, this.hiveX, this.hiveY);
-        w.init(this.hive, this.flowers);
-        this.workers.add(w);
-        break;
+      case 'HIVE_WORKERS':   new WorkerBee(this.hiveX, this.hiveY); break;
       case 'SOLDIER_DMG':
-        this.soldiers.getChildren().forEach(s => {
-          s.damage = SOLDIER.DAMAGE + (this._metaSoldierDmg ?? 0) + lvl;
-        });
+        for (const s of World.getByTag('soldier')) s.damage = SOLDIER.DAMAGE + (this._metaSoldierDmg ?? 0) + lvl;
         break;
       case 'SOLDIER_RATE':
-        this.soldiers.getChildren().forEach(s => {
-          s.fireRate = Math.max(400, SOLDIER.FIRE_RATE - lvl * 100);
-        });
+        for (const s of World.getByTag('soldier')) s.fireRate = Math.max(400, SOLDIER.FIRE_RATE - lvl * 100);
         break;
-    }
-  }
-
-  _createPlaygroundUI() {
-    const s  = { fontSize: '20px', color: '#ffffff', stroke: '#000000', strokeThickness: 4, fontFamily: 'monospace' };
-    const hs = { ...s, fontSize: '16px', color: '#ffdd44' };
-
-    this.add.text(640, 16, 'PLAYGROUND  (RB=cycle  X=select)', hs)
-      .setOrigin(0.5, 0).setScrollFactor(0).setDepth(200);
-
-    const pgDefs = [
-      { x: 380, label: '[ Spawn Hunter ]', action: () => this._spawnPlaygroundWasp('hunter') },
-      { x: 560, label: '[ Spawn Raider ]', action: () => this._spawnPlaygroundWasp('raider') },
-      { x: 740, label: '[ Spawn Archer ]', action: () => this._spawnPlaygroundWasp('archer') },
-      { x: 910, label: '[ Max Honey ]',    action: () => this.resources.addHoney(this.resources.getHoneyStorage()) },
-      { x: 1060, label: '[ Exit ]',        action: () => this.scene.start('MenuScene') },
-    ];
-
-    this._pgBtns    = pgDefs.map(({ x, label, action }) => {
-      const b = this.add.text(x, 660, label, s)
-        .setOrigin(0.5, 1).setScrollFactor(0).setDepth(200).setInteractive({ useHandCursor: true });
-      b.on('pointerover',  () => b.setColor('#ffaa00'));
-      b.on('pointerout',   () => b.setColor('#ffffff'));
-      b.on('pointerdown',  action);
-      return b;
-    });
-    this._pgActions  = pgDefs.map(d => d.action);
-    this._pgSelIdx   = 0;
-    this._pgGpLBWas  = false;
-    this._pgGpRBWas  = false;
-    this._pgGpXWas   = false;
-    this._pgRefresh();
-  }
-
-  _pgRefresh() {
-    this._pgBtns?.forEach((b, i) => b.setColor(i === this._pgSelIdx ? '#ffaa00' : '#ffffff'));
-  }
-
-  _updatePlaygroundGamepad(pad) {
-    const lbDown = pad.buttons[4]?.pressed ?? false;
-    if (lbDown && !this._pgGpLBWas) {
-      this._pgSelIdx = (this._pgSelIdx - 1 + this._pgBtns.length) % this._pgBtns.length;
-      this._pgRefresh();
-    }
-    this._pgGpLBWas = lbDown;
-
-    const rbDown = pad.buttons[5]?.pressed ?? false;
-    if (rbDown && !this._pgGpRBWas) {
-      this._pgSelIdx = (this._pgSelIdx + 1) % this._pgBtns.length;
-      this._pgRefresh();
-    }
-    this._pgGpRBWas = rbDown;
-
-    const xDown = pad.buttons[2]?.pressed ?? false;
-    if (xDown && !this._pgGpXWas) this._pgActions[this._pgSelIdx]?.();
-    this._pgGpXWas = xDown;
-  }
-
-  _spawnPlaygroundWasp(type) {
-    const hx = this.waspHiveSystem.hive.x;
-    const hy = this.waspHiveSystem.hive.y;
-    if (type === 'hunter') {
-      const w = new HunterWasp(this, hx, hy);
-      w.setTarget(this.player);
-      this.wasps.add(w);
-    } else if (type === 'raider') {
-      const w = new RaiderWasp(this, hx, hy, this.hive, this.hive, this.waspHiveSystem.hive);
-      this.wasps.add(w);
-    } else if (type === 'archer') {
-      const w = new ArcherWasp(this, hx, hy);
-      w.setTarget(this.player);
-      this.wasps.add(w);
     }
   }
 
   _onPlayerDeath() {
     if (this.resources.spendHoney(BEE.RESPAWN_COST)) {
-      this.time.delayedCall(2000, () => {
-        if (!this._ended) this.player.respawn(this.hiveX, this.hiveY);
-      });
+      World.after(2000, () => { if (!this._ended) this.player.respawn(this.hiveX, this.hiveY); });
     } else {
-      this._endGame(false); // can't afford respawn
+      this._endGame(false);
     }
   }
 
@@ -1051,13 +629,18 @@ export default class GameScene extends Phaser.Scene {
     const score = this._calculateScore();
     const waves = this.waveManager.getWaveNumber();
     const timeSurvived = Math.floor(this._playTime / 1000);
-    this.scene.start('GameOverScene', { won, score, waves, timeSurvived, wonByDestruction });
+    import('./index.js').then(({ transition }) =>
+      import('./GameOverScene.js').then(({ default: S }) =>
+        transition(S, { won, score, waves, timeSurvived, wonByDestruction })
+      )
+    );
   }
 
   _calculateScore() {
-    return Math.floor(
-      this.resources.getHoney() * 10 +
-      this.waveManager.getWaveNumber() * 100
-    );
+    return Math.floor(this.resources.getHoney() * 10 + this.waveManager.getWaveNumber() * 100);
   }
+
+  getCamera() { return this.camera; }
+
+  destroy() { World.clear(); }
 }

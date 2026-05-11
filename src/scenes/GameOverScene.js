@@ -1,14 +1,12 @@
-import Phaser from 'phaser';
 import MetaSave from '../systems/MetaSave.js';
+import Input from '../engine/Input.js';
 
-export default class GameOverScene extends Phaser.Scene {
-  constructor() { super('GameOverScene'); }
-
-  init(data) {
-    this.won              = data.won              ?? false;
-    this.score            = data.score            ?? 0;
-    this.waves            = data.waves            ?? 0;
-    this.timeSurvived     = data.timeSurvived     ?? 0;
+export default class GameOverScene {
+  constructor(data = {}) {
+    this.won = data.won ?? false;
+    this.score = data.score ?? 0;
+    this.waves = data.waves ?? 0;
+    this.timeSurvived = data.timeSurvived ?? 0;
     this.wonByDestruction = data.wonByDestruction ?? false;
 
     const earned = this.wonByDestruction
@@ -18,66 +16,63 @@ export default class GameOverScene extends Phaser.Scene {
     this.earned = earned;
 
     const s = MetaSave.load();
-    if (this.score > s.highScore) {
-      s.highScore = this.score;
-    }
+    if (this.score > (s.highScore ?? 0)) s.highScore = this.score;
     s.lastRun = { score: this.score, waves: this.waves, timeSurvived: this.timeSurvived, won: this.won };
     MetaSave.save(s);
-    this.highScore = MetaSave.load().highScore;
+    this.highScore = MetaSave.load().highScore ?? 0;
+    this._clicked = false;
   }
 
   create() {
-    const cx = 640, cy = 360;
-    const s28 = { fontSize: '28px', color: '#ffffff' };
-    const sGold = { fontSize: '32px', color: '#ffd700' };
-
-    const headline = this.wonByDestruction
-      ? 'WASP HIVE DESTROYED'
-      : this.won ? 'YOU WIN!' : 'HIVE DESTROYED';
-    const headlineColor = (this.won || this.wonByDestruction) ? '#ffd700' : '#ff4444';
-
-    this.add.text(cx, 120, headline, {
-      fontSize: '56px',
-      color: headlineColor,
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    const mins = Math.floor(this.timeSurvived / 60);
-    const secs = String(this.timeSurvived % 60).padStart(2, '0');
-
-    if (this.wonByDestruction) {
-      this.add.text(cx, 210, `Destroyed in ${mins}:${secs}`, sGold).setOrigin(0.5);
-      this.add.text(cx, 260, `Waves survived: ${this.waves}`, s28).setOrigin(0.5);
-    } else {
-      this.add.text(cx, 210, `Score: ${this.score}`, sGold).setOrigin(0.5);
-      this.add.text(cx, 260, `Waves survived: ${this.waves}`, s28).setOrigin(0.5);
-      this.add.text(cx, 300, `Time: ${mins}:${secs}`, s28).setOrigin(0.5);
-    }
-
-    this.add.text(cx, 360, `+${this.earned} Royal Jelly`, {
-      fontSize: '36px', color: '#ffcc00', fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    this.add.text(cx, 420, `All-time high score: ${this.highScore}`, {
-      fontSize: '24px', color: '#aaaaaa',
-    }).setOrigin(0.5);
-
-    this._btn = this.add.text(cx, 500, '[ BACK TO MENU ]', {
-      fontSize: '28px', color: '#ffffff',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-    this._btn.on('pointerover', () => this._btn.setColor('#ffffff'));
-    this._btn.on('pointerout',  () => this._btn.setColor('#ffd700'));
-    this._btn.on('pointerdown', () => this.scene.start('MenuScene'));
-
-    this._gpAWasDown = false;
+    this._canvas = document.getElementById('game');
+    this._ctx = this._canvas.getContext('2d');
+    this._gpAWasDown = true;
+    this._canvas.addEventListener('pointerdown', this._onClick = () => { this._clicked = true; });
   }
 
   update() {
-    const gp = this.input.gamepad;
-    const pad = gp?.total > 0 ? gp.gamepads.find(p => p?.connected) : null;
-    const aDown = pad?.buttons[0]?.pressed ?? false;
-    if (aDown && !this._gpAWasDown) this.scene.start('MenuScene');
-    this._gpAWasDown = aDown;
+    const ctx = this._ctx;
+    const W = 400, H = 240;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1a0a00';
+    ctx.fillRect(0, 0, W, H);
+
+    const headline = this.wonByDestruction ? 'HIVE DESTROYED!' : this.won ? 'YOU WIN!' : 'HIVE LOST';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = (this.won || this.wonByDestruction) ? '#ffd700' : '#ff4444';
+    ctx.textAlign = 'center';
+    ctx.fillText(headline, W / 2, 50);
+
+    const mins = Math.floor(this.timeSurvived / 60);
+    const secs = String(this.timeSurvived % 60).padStart(2, '0');
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`Score: ${this.score}   Waves: ${this.waves}   Time: ${mins}:${secs}`, W / 2, 90);
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText(`+${this.earned} Royal Jelly`, W / 2, 115);
+    ctx.fillStyle = '#888888';
+    ctx.fillText(`High score: ${this.highScore}`, W / 2, 135);
+
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('[ BACK TO MENU ]', W / 2, 185);
+    ctx.textAlign = 'left';
+
+    if (this._clicked || Input.justDown('Enter') || Input.justDown(' ')) {
+      this._clicked = false;
+      this._goMenu();
+    }
   }
+
+  _goMenu() {
+    import('./index.js').then(({ transition }) =>
+      import('./MenuScene.js').then(({ default: MenuScene }) => transition(MenuScene))
+    );
+  }
+
+  destroy() {
+    if (this._onClick) this._canvas?.removeEventListener('pointerdown', this._onClick);
+  }
+
+  getCamera() { return null; }
 }

@@ -1,69 +1,95 @@
-import Phaser from 'phaser';
-
-export default class BootScene extends Phaser.Scene {
-  constructor() { super('BootScene'); }
-
-  preload() {
-    const cx = 640, cy = 360;
-    const barW = 400, barH = 16;
-
-    this.add.text(cx, cy - 40, 'Loading...', {
-      fontSize: '28px', color: '#ffd700', fontFamily: 'monospace',
-    }).setOrigin(0.5);
-
-    const barBg = this.add.rectangle(cx, cy, barW, barH, 0x333333).setOrigin(0.5);
-    const bar   = this.add.rectangle(cx - barW / 2, cy, 0, barH, 0xffd700).setOrigin(0, 0.5);
-
-    this.load.on('progress', v => bar.setSize(barW * v, barH));
-
-    this.load.image('player-bee', 'bee.png');
-    this.load.image('splash', 'splash-small.png');
-    this.load.image('wasp', 'wasp.png');
-    this.load.spritesheet('flower',    'flowers-sheet.png', { frameWidth: 400, frameHeight: 400 });
-    this.load.spritesheet('grass-deco','grass-sheet.png',   { frameWidth: 400, frameHeight: 400 });
-    this.load.spritesheet('hives',     'hives.png',         { frameWidth: 400, frameHeight: 400 });
-    this.load.spritesheet('pickups',   'pickups.png',       { frameWidth: 400, frameHeight: 400 });
-    this.load.spritesheet('misc',      'misc.png',          { frameWidth: 400, frameHeight: 400 });
-  }
+export default class BootScene {
+  constructor() {}
 
   create() {
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const assets = [
+      ['player-bee',  '/bee.png'],
+      ['wasp',        '/wasp.png'],
+      ['flower',      '/flowers-sheet.png'],
+      ['hive',        '/hives.png'],
+      ['misc',        '/misc.png'],
+      ['pickups',     '/pickups.png'],
+    ];
 
-    g.clear();
-    g.fillStyle(0xffffff);
-    g.fillRect(0, 0, 8, 3);
-    g.generateTexture('stinger', 8, 3);
+    window.__sprites = window.__sprites ?? {};
+    let loaded = 0;
 
-    g.clear();
-    g.fillStyle(0x4488ff);
-    g.fillCircle(14, 14, 12);
-    g.generateTexture('guard-bee', 28, 28);
+    const done = () => {
+      import('./index.js').then(({ transition }) =>
+        import('./MenuScene.js').then(({ default: MenuScene }) =>
+          transition(MenuScene)
+        )
+      );
+    };
 
-    g.clear();
-    g.fillStyle(0x444444);
-    g.fillCircle(20, 20, 18);
-    g.fillStyle(0x888888);
-    g.fillCircle(20, 20, 10);
-    g.generateTexture('stinger-turret', 40, 40);
+    // Generate procedural canvas textures
+    const offscreen = document.createElement('canvas');
+    const gctx = offscreen.getContext('2d');
 
-    g.clear();
-    g.fillStyle(0xffffff);
-    g.fillCircle(4, 4, 4);
-    g.generateTexture('particle', 8, 8);
+    offscreen.width = 8; offscreen.height = 3;
+    gctx.fillStyle = '#ffffff';
+    gctx.fillRect(0, 0, 8, 3);
+    const stingerImg = new Image();
+    stingerImg.src = offscreen.toDataURL();
+    window.__sprites['stinger'] = stingerImg;
 
-    g.clear();
-    g.lineStyle(2, 0xffffff, 0.7);
-    g.strokeCircle(24, 24, 22);
-    g.strokeCircle(24, 24, 14);
-    g.strokeCircle(24, 24, 6);
-    g.lineStyle(1, 0xffffff, 0.4);
-    g.lineBetween(2, 24, 46, 24);
-    g.lineBetween(24, 2, 24, 46);
-    g.lineBetween(7, 7, 41, 41);
-    g.lineBetween(41, 7, 7, 41);
-    g.generateTexture('web', 48, 48);
+    offscreen.width = 28; offscreen.height = 28;
+    gctx.clearRect(0, 0, 28, 28);
+    gctx.fillStyle = '#4488ff';
+    gctx.beginPath(); gctx.arc(14, 14, 12, 0, Math.PI * 2); gctx.fill();
+    const guardBeeImg = new Image();
+    guardBeeImg.src = offscreen.toDataURL();
+    window.__sprites['guard-bee'] = guardBeeImg;
 
-    g.destroy();
-    this.scene.start('MenuScene');
+    offscreen.width = 40; offscreen.height = 40;
+    gctx.clearRect(0, 0, 40, 40);
+    gctx.fillStyle = '#444444';
+    gctx.beginPath(); gctx.arc(20, 20, 18, 0, Math.PI * 2); gctx.fill();
+    gctx.fillStyle = '#888888';
+    gctx.beginPath(); gctx.arc(20, 20, 10, 0, Math.PI * 2); gctx.fill();
+    const turretImg = new Image();
+    turretImg.src = offscreen.toDataURL();
+    window.__sprites['stinger-turret'] = turretImg;
+
+    offscreen.width = 8; offscreen.height = 8;
+    gctx.clearRect(0, 0, 8, 8);
+    gctx.fillStyle = '#ffffff';
+    gctx.beginPath(); gctx.arc(4, 4, 4, 0, Math.PI * 2); gctx.fill();
+    const particleImg = new Image();
+    particleImg.src = offscreen.toDataURL();
+    window.__sprites['particle'] = particleImg;
+
+    offscreen.width = 48; offscreen.height = 48;
+    gctx.clearRect(0, 0, 48, 48);
+    gctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    gctx.lineWidth = 2;
+    gctx.beginPath(); gctx.arc(24, 24, 22, 0, Math.PI * 2); gctx.stroke();
+    gctx.beginPath(); gctx.arc(24, 24, 14, 0, Math.PI * 2); gctx.stroke();
+    gctx.beginPath(); gctx.arc(24, 24, 6, 0, Math.PI * 2); gctx.stroke();
+    gctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    gctx.lineWidth = 1;
+    gctx.beginPath(); gctx.moveTo(2, 24); gctx.lineTo(46, 24); gctx.stroke();
+    gctx.beginPath(); gctx.moveTo(24, 2); gctx.lineTo(24, 46); gctx.stroke();
+    const webImg = new Image();
+    webImg.src = offscreen.toDataURL();
+    window.__sprites['web'] = webImg;
+
+    if (assets.length === 0) { done(); return; }
+
+    for (const [key, path] of assets) {
+      const img = new Image();
+      img.onload = () => {
+        window.__sprites[key] = img;
+        loaded++;
+        if (loaded === assets.length) done();
+      };
+      img.onerror = () => {
+        loaded++;
+        if (loaded === assets.length) done();
+      };
+      img.src = path;
+    }
   }
+
+  destroy() {}
 }
