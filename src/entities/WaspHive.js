@@ -6,7 +6,8 @@ export default class WaspHive extends Entity {
   constructor(x, y) {
     super(x, y, 'hive');
     this.spriteScale = 1.2;
-    this.tint = 0xff6600;
+    this.spriteFrame = 1;
+    this.tint = null;
     this.drag = 1;
     this.maxSpeed = 0;
     this.hp = WASP_HIVE.HP;
@@ -18,7 +19,7 @@ export default class WaspHive extends Entity {
     if (this.hp <= 0) return true;
     this.hp = Math.max(0, this.hp - amount);
     this.setTint(0xff4444);
-    World.after(150, () => { if (this.active) this.setTint(0xff6600); });
+    World.after(150, () => { if (this.active) this.clearTint(); });
     if (this.onDamaged) this.onDamaged();
     return this.hp <= 0;
   }

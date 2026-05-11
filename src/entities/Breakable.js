@@ -6,7 +6,8 @@ import Pickup from './Pickup.js';
 
 export default class Breakable extends Entity {
   constructor(x, y) {
-    super(x, y, 'breakable');
+    super(x, y, 'misc');
+    this.spriteFrame = 2;
     this.spriteScale = 0.8;
     this.drag = 1;
     this.maxSpeed = 0;

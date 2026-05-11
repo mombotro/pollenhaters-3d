@@ -7,6 +7,7 @@ export default class GuardPost extends Entity {
   constructor(x, y) {
     super(x, y, 'misc');
     this.spriteScale = 0.1;
+    this.spriteFrame = 0;
     this.drag = 1;
     this.maxSpeed = 0;
     this.towerType = 'guard';

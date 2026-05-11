@@ -7,7 +7,7 @@ import SoundSynth from '../systems/SoundSynth.js';
 
 export default class PlayerBee extends Entity {
   constructor(x, y, onFire) {
-    super(x, y, 'player-bee');
+    super(x, y, 'bee-sheet');
     this.maxSpeed = BEE.SPEED;
     this.drag = 0.015;
     this.hp = BEE.HP;
@@ -80,6 +80,10 @@ export default class PlayerBee extends Entity {
     }
 
     this._autoFire(time);
+
+    // Wing-flap animation (8 frames across rows 0-1 of bee_sheet)
+    const moving = Math.hypot(this.vx, this.vy) > 10;
+    this.spriteFrame = moving ? Math.floor(time / 80) % 8 : 0;
   }
 
   _readGamepad() {

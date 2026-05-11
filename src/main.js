@@ -28,16 +28,18 @@ function loop(timestamp) {
 
   if (camera) {
     const allEntities = [
+      ...World.getByTag('hive'),
+      ...World.getByTag('waspHive'),
+      ...World.getByTag('flower'),
+      ...World.getByTag('breakable'),
+      ...World.getByTag('tower'),
       ...World.getByTag('bee'),
       ...World.getByTag('wasp'),
-      ...World.getByTag('stinger'),
-      ...World.getByTag('flower'),
-      ...World.getByTag('tower'),
-      ...World.getByTag('gem'),
-      ...World.getByTag('pickup'),
       ...World.getByTag('spider'),
       ...World.getByTag('butterfly'),
-      ...World.getByTag('breakable'),
+      ...World.getByTag('gem'),
+      ...World.getByTag('pickup'),
+      ...World.getByTag('stinger'),
     ];
 
     renderer.render(camera, allEntities, window.__sprites ?? {});

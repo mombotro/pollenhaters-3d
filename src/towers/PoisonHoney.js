@@ -6,6 +6,7 @@ export default class PoisonHoney extends Entity {
   constructor(x, y) {
     super(x, y, 'misc');
     this.spriteScale = 0.08;
+    this.spriteFrame = 9;
     this.drag = 1;
     this.maxSpeed = 0;
     this.towerType = 'poison-honey';

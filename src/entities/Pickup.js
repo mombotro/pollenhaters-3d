@@ -9,6 +9,7 @@ export default class Pickup extends Entity {
     super(x, y, 'pickup');
     this.spriteScale = 0.5;
     this.type = type;
+    this.spriteFrame = { health: 0, xp: 1, honey: 2 }[type] ?? 1;
     this.vx = randInt(-10, 10);
     this.vy = randInt(-10, 10);
     this.drag = 0.03;

@@ -21,6 +21,7 @@ export default class Flower extends Entity {
     this.pollenCollected = false;
     this.claimedBy       = null;
     this.spriteScale     = initialBloom ? 1.0 : 0.5;
+    this._updateSpriteFrame();
 
     if (initialBloom) this._enterMature();
 
@@ -68,17 +69,24 @@ export default class Flower extends Entity {
     return taken;
   }
 
+  _updateSpriteFrame() {
+    const typeRow = { COMMON: 0, RARE: 1, AROMATIC: 2 }[this._type] ?? 0;
+    const stateCol = { young: 0, mature: 1, old: 2, dead: 3 }[this._state] ?? 0;
+    this.spriteFrame = typeRow * 4 + stateCol;
+  }
+
   _enterMature(time = 0) {
     this._matureAt = time;
     this._state = STATE.MATURE;
     this.spriteScale = 1.0;
     this.clearTint();
+    this._updateSpriteFrame();
   }
 
   _enterOld(time) {
     this._state = STATE.OLD;
     this._oldAt = time;
-    this.setTint(0x888888);
+    this._updateSpriteFrame();
   }
 
   _enterDead() {

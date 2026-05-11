@@ -7,7 +7,7 @@ const STATE = { SEEK: 'seek', COLLECT: 'collect', RETURN: 'return' };
 
 export default class WorkerBee extends Entity {
   constructor(x, y) {
-    super(x, y, 'player-bee');
+    super(x, y, 'bee-sheet');
     this.spriteScale = 0.5;
     this.tint = 0x88ff44;
     this.hp = WORKER.HP;

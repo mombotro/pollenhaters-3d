@@ -6,7 +6,7 @@ import Stinger from './Stinger.js';
 
 export default class SoldierBee extends Entity {
   constructor(x, y) {
-    super(x, y, 'player-bee');
+    super(x, y, 'bee-sheet');
     this.spriteScale = 0.55;
     this.tint = 0xff8800;
     this.alive = true;

@@ -17,6 +17,7 @@ export default class Entity {
     this.tint = null;
     this.alpha = 1;
     this.spriteScale = 1;
+    this.spriteFrame = 0;
   }
 
   setPosition(x, y) { this.x = x; this.y = y; return this; }

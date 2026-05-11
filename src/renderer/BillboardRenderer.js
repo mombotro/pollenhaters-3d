@@ -18,7 +18,7 @@ export default class BillboardRenderer {
     canvas.style.height = `${100 * (SCREEN_H / SCREEN_W)}vmin`;
   }
 
-  render(camera, entities, spriteSheets) {
+  render(camera, entities, sprites) {
     const ctx = this.ctx;
 
     ctx.fillStyle = SKY_COLOR;
@@ -36,10 +36,9 @@ export default class BillboardRenderer {
       if (dist < 1) continue;
 
       let relAngle = Math.atan2(dy, dx) - camera.angle;
-      while (relAngle > Math.PI) relAngle -= Math.PI * 2;
+      while (relAngle >  Math.PI) relAngle -= Math.PI * 2;
       while (relAngle < -Math.PI) relAngle += Math.PI * 2;
-
-      if (Math.abs(relAngle) > FOV / 2 * 1.1) continue;
+      if (Math.abs(relAngle) > FOV * 0.55) continue;
 
       const screenX = Math.round((relAngle / FOV + 0.5) * SCREEN_W);
       const spriteH = Math.round((PROJECTION_PLANE / dist) * (entity.spriteScale ?? 1) * 32);
@@ -51,19 +50,31 @@ export default class BillboardRenderer {
     projected.sort((a, b) => b.dist - a.dist);
 
     for (const { entity, screenX, spriteH } of projected) {
-      const img = spriteSheets?.[entity.spriteKey];
+      const entry = sprites?.[entity.spriteKey];
       const drawX = Math.round(screenX - spriteH / 2);
-      const drawY = Math.round(HORIZON - spriteH / 2);
+      const drawY = Math.round(HORIZON - spriteH * 0.6);
+      const alpha = entity.alpha ?? 1;
 
-      if (img) {
-        ctx.drawImage(img, drawX, drawY, spriteH, spriteH);
+      if (entry) {
+        const { img, fw, fh } = entry;
+        const cols = Math.max(1, Math.floor(img.naturalWidth / fw));
+        const frame = entity.spriteFrame ?? 0;
+        const sx = (frame % cols) * fw;
+        const sy = Math.floor(frame / cols) * fh;
+
+        if (alpha < 1) ctx.globalAlpha = alpha;
+        ctx.drawImage(img, sx, sy, fw, fh, drawX, drawY, spriteH, spriteH);
+        if (alpha < 1) ctx.globalAlpha = 1;
       } else {
+        // Fallback colored rect
+        ctx.globalAlpha = alpha;
         ctx.fillStyle = '#ffaa00';
         ctx.fillRect(drawX, drawY, spriteH, spriteH);
+        ctx.globalAlpha = 1;
       }
 
       if (entity.tint) {
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = 0.35 * alpha;
         ctx.fillStyle = `#${entity.tint.toString(16).padStart(6, '0')}`;
         ctx.fillRect(drawX, drawY, spriteH, spriteH);
         ctx.globalAlpha = 1;

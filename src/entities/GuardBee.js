@@ -6,7 +6,7 @@ import Stinger from './Stinger.js';
 
 export default class GuardBee extends Entity {
   constructor(x, y, post) {
-    super(x, y, 'player-bee');
+    super(x, y, 'bee-sheet');
     this.spriteScale = 0.5;
     this.tint = 0x4488ff;
     this.hp = TOWER.GUARD_BEE_HP;
