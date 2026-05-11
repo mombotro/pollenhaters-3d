@@ -1,91 +1,59 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
+import { dist, rotateToward, angleBetween } from '../utils/math.js';
 import { WASP, TOWER } from '../constants.js';
 import SoundSynth from '../systems/SoundSynth.js';
 
-export default class HunterWasp extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'wasp');
-    this.setScale(1.0);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
+export default class HunterWasp extends Entity {
+  constructor(x, y) {
+    super(x, y, 'wasp');
+    this.spriteScale = 1.0;
     this.waspType = 'hunter';
     this.hp = WASP.HP;
     this._target = null;
     this.lastHit = 0;
     this.slowedUntil = 0;
     this.honeyCarried = 0;
-    this.setDrag(800, 800);
+    this.drag = 0.015;
+    this.maxSpeed = WASP.HUNTER_SPEED;
+    World.add(this, 'wasp', 'hunter');
   }
 
   setTarget(target) { this._target = target; }
-
   setFlankWaypoint(x, y) { this._flankWaypoint = { x, y }; }
 
-  update(time, windVec) {
+  update(time, dt) {
     if (this._flankWaypoint) {
-      const dist = Phaser.Math.Distance.Between(this.x, this.y, this._flankWaypoint.x, this._flankWaypoint.y);
-      if (dist <= 50) {
+      const d = dist(this.x, this.y, this._flankWaypoint.x, this._flankWaypoint.y);
+      if (d <= 50) {
         this._flankWaypoint = null;
       } else {
-        const speed = WASP.HUNTER_SPEED * (this._speedMult ?? 1);
-        this.setMaxVelocity(speed, speed);
-        const ax = (this._flankWaypoint.x - this.x) / dist;
-        const ay = (this._flankWaypoint.y - this.y) / dist;
-        this.setAcceleration(ax * speed * 10, ay * speed * 10);
-        if (this.body.velocity.lengthSq() > 10) {
-          this.rotation = Phaser.Math.Angle.RotateTo(this.rotation, this.body.velocity.angle() + Math.PI / 2, 0.15);
-        }
+        this._moveToward(this._flankWaypoint.x, this._flankWaypoint.y, time);
         this._separate();
         return;
       }
     }
 
     if (this._poisonTarget && this._poisonTarget.active && !this.isRetreating) {
-      const baseSpeed = WASP.HUNTER_SPEED * (this._speedMult ?? 1);
-      const speed = time < this.slowedUntil ? baseSpeed * TOWER.RESIN_TRAP_SLOW : baseSpeed;
-      this.setMaxVelocity(speed, speed);
-      const dist = Phaser.Math.Distance.Between(this.x, this.y, this._poisonTarget.x, this._poisonTarget.y);
-      if (dist > 5) {
-        const ax = (this._poisonTarget.x - this.x) / dist;
-        const ay = (this._poisonTarget.y - this.y) / dist;
-        this.setAcceleration(ax * speed * 10, ay * speed * 10);
-      } else {
-        this.setAcceleration(0, 0);
-      }
-      if (this.body.velocity.lengthSq() > 10) {
-        this.rotation = Phaser.Math.Angle.RotateTo(this.rotation, this.body.velocity.angle() + Math.PI / 2, 0.15);
-      }
+      this._moveToward(this._poisonTarget.x, this._poisonTarget.y, time);
       this._separate();
       return;
     }
 
     if (this.isRetreating && this.retreatTarget) {
-      const baseSpeed = WASP.HUNTER_SPEED * (this._speedMult ?? 1);
-      const speed = time < this.slowedUntil
-        ? baseSpeed * TOWER.RESIN_TRAP_SLOW
-        : baseSpeed;
-      this.setMaxVelocity(speed, speed);
-      const dist = Phaser.Math.Distance.Between(this.x, this.y, this.retreatTarget.x, this.retreatTarget.y);
-      if (dist > 5) {
-        const ax = (this.retreatTarget.x - this.x) / dist;
-        const ay = (this.retreatTarget.y - this.y) / dist;
-        this.setAcceleration(ax * speed * 10, ay * speed * 10);
-      } else {
-        this.setAcceleration(0, 0);
-      }
+      this._moveToward(this.retreatTarget.x, this.retreatTarget.y, time);
       if (this.honeyCarried > 0) {
-        if (dist < 50) {
-          this.scene._burst?.(this.retreatTarget.x, this.retreatTarget.y, 0xffaa00, 10);
-          this.scene._burst?.(this.retreatTarget.x, this.retreatTarget.y, 0xff4400, 6);
+        if (dist(this.x, this.y, this.retreatTarget.x, this.retreatTarget.y) < 50) {
+          World.getSystem('fx')?.burst(this.retreatTarget.x, this.retreatTarget.y, 0xffaa00, 10);
           SoundSynth.play('deposit');
-          this.scene.waspHiveSystem.onHoneyStolen(this.honeyCarried);
+          World.getSystem('waspHive')?.onHoneyStolen(this.honeyCarried);
           this.destroy();
         }
       } else if (this.poisonCarried) {
-        if (dist < 50) {
-          this.scene._burst?.(this.retreatTarget.x, this.retreatTarget.y, 0x44ff44, 8);
+        if (dist(this.x, this.y, this.retreatTarget.x, this.retreatTarget.y) < 50) {
+          World.getSystem('fx')?.burst(this.retreatTarget.x, this.retreatTarget.y, 0x44ff44, 8);
           SoundSynth.play('hive-hit');
-          this.scene.waspHiveSystem.onPoisonDelivered(TOWER.POISON_HONEY_DAMAGE);
+          World.getSystem('waspHive')?.onPoisonDelivered(TOWER.POISON_HONEY_DAMAGE);
           this.destroy();
         }
       } else if (this.x < -200 || this.x > 3000 || this.y < -200 || this.y > 2000) {
@@ -95,101 +63,90 @@ export default class HunterWasp extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    let target = this._target;
-    
-    // Switch to player if player is alive and we aren't targeting them
-    if (this.scene.player && this.scene.player.alive && target !== this.scene.player) {
-      target = this.scene.player;
-      this._target = target;
+    const player = World.getByTag('player')[0];
+    if (player?.active && player.alive) {
+      this._target = player;
+    } else if (!this._target?.active || this._target?.alive === false) {
+      const candidates = [
+        ...World.getByTag('worker').filter(w => w.active && w.alive),
+        ...World.getByTag('tower').filter(t => t.active && t.hp > 0 && t.towerType === 'guard'),
+        ...World.getByTag('hive').filter(h => h.active),
+      ];
+      let nearest = null, nearestD = Infinity;
+      for (const c of candidates) {
+        const d = dist(this.x, this.y, c.x, c.y);
+        if (d < nearestD) { nearest = c; nearestD = d; }
+      }
+      this._target = nearest;
     }
 
-    // If target is dead/invalid, find a fallback
-    if (!target || !target.active || target.alive === false) {
-      const workers = this.scene.workers ? this.scene.workers.getChildren().filter(w => w.active && w.alive) : [];
-      const guardPosts = this.scene._towerList ? this.scene._towerList.filter(t => t.towerType === 'guard' && t.active && t.hp > 0) : [];
-      const potentialTargets = [...workers, ...guardPosts];
-      if (this.scene.hive && this.scene.hive.active) potentialTargets.push(this.scene.hive);
-
-      let nearest = null, nearestDist = Infinity;
-      potentialTargets.forEach(t => {
-        const d = Phaser.Math.Distance.Between(this.x, this.y, t.x, t.y);
-        if (d < nearestDist) { nearest = t; nearestDist = d; }
-      });
-      target = nearest;
-      this._target = target;
-    }
-
-    if (!target || !target.active) {
-      // Counter wind so wasp doesn't drift off screen if absolutely no targets exist
-      this.setAcceleration(0, 0);
-      if (windVec) this.body.setVelocity(-windVec.x, -windVec.y);
+    if (!this._target?.active) {
+      this.ax = 0; this.ay = 0;
+      this._separate();
       return;
     }
-    const baseSpeed = WASP.HUNTER_SPEED * (this._speedMult ?? 1);
-    const speed = time < this.slowedUntil
-      ? baseSpeed * TOWER.RESIN_TRAP_SLOW
-      : baseSpeed;
 
-    this.setMaxVelocity(speed, speed);
-    const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-    if (dist > 5) {
-      const ax = (target.x - this.x) / dist;
-      const ay = (target.y - this.y) / dist;
-      this.setAcceleration(ax * speed * 10, ay * speed * 10);
-    } else {
-      this.setAcceleration(0, 0);
-    }
-
-    if (this.body.velocity.lengthSq() > 10) {
-      const targetRotation = this.body.velocity.angle() + Math.PI / 2;
-      this.rotation = Phaser.Math.Angle.RotateTo(this.rotation, targetRotation, 0.15);
-    }
+    this._moveToward(this._target.x, this._target.y, time);
     this._separate();
   }
 
-  _separate() {
-    if (!this.scene?.wasps) return;
-    const RADIUS = 72, FORCE = 1200;
-    let sx = 0, sy = 0;
-    this.scene.wasps.getChildren().forEach(other => {
-      if (!other.active || other === this) return;
-      const dx = this.x - other.x;
-      const dy = this.y - other.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist === 0) {
-        sx += (Math.random() - 0.5) * FORCE;
-        sy += (Math.random() - 0.5) * FORCE;
-      } else if (dist < RADIUS) {
-        const s = ((RADIUS - dist) / RADIUS) * FORCE;
-        sx += (dx / dist) * s;
-        sy += (dy / dist) * s;
-      }
-    });
-    if (sx !== 0 || sy !== 0) {
-      this.body.acceleration.x += sx;
-      this.body.acceleration.y += sy;
+  _moveToward(tx, ty, time) {
+    const baseSpeed = WASP.HUNTER_SPEED * (this._speedMult ?? 1);
+    const speed = time < this.slowedUntil ? baseSpeed * TOWER.RESIN_TRAP_SLOW : baseSpeed;
+    this.maxSpeed = speed;
+    const d = dist(this.x, this.y, tx, ty);
+    if (d > 5) {
+      this.ax = ((tx - this.x) / d) * speed * 10;
+      this.ay = ((ty - this.y) / d) * speed * 10;
+    } else {
+      this.ax = 0; this.ay = 0;
+    }
+    if (this.vx * this.vx + this.vy * this.vy > 10) {
+      this.angle = rotateToward(this.angle, Math.atan2(this.vy, this.vx) + Math.PI / 2, 0.15);
     }
   }
 
-  // Returns true if destroyed
+  _separate() {
+    const RADIUS = 72, FORCE = 1200;
+    let sx = 0, sy = 0;
+    for (const other of World.getByTag('wasp')) {
+      if (!other.active || other === this) continue;
+      const dx = this.x - other.x;
+      const dy = this.y - other.y;
+      const d = Math.hypot(dx, dy);
+      if (d === 0) {
+        sx += (Math.random() - 0.5) * FORCE;
+        sy += (Math.random() - 0.5) * FORCE;
+      } else if (d < RADIUS) {
+        const s = ((RADIUS - d) / RADIUS) * FORCE;
+        sx += (dx / d) * s;
+        sy += (dy / d) * s;
+      }
+    }
+    this.ax += sx;
+    this.ay += sy;
+  }
+
   takeDamage(amount) {
     this.hp -= amount;
     this.setTint(0xffffff);
-    this.scene.time.delayedCall(80, () => { if (this.active) this.clearTint(); });
+    World.after(80, () => { if (this.active) this.clearTint(); });
     if (this.hp <= 0) { this.destroy(); return true; }
     return false;
   }
 
   retreat() {
     this.isRetreating = true;
-    if ((this.honeyCarried > 0 || this.poisonCarried) && this.scene.waspHiveSystem) {
-      const wh = this.scene.waspHiveSystem.hive;
+    const waspHive = World.getSystem('waspHive');
+    if ((this.honeyCarried > 0 || this.poisonCarried) && waspHive) {
+      const wh = waspHive.hive;
       this.retreatTarget = { x: wh.x, y: wh.y };
     } else {
-      const angle = Phaser.Math.Angle.Between(this.scene.hive.x, this.scene.hive.y, this.x, this.y);
+      const hive = World.getByTag('hive')[0];
+      const a = angleBetween(hive.x, hive.y, this.x, this.y);
       this.retreatTarget = {
-        x: this.x + Math.cos(angle) * 2000,
-        y: this.y + Math.sin(angle) * 2000,
+        x: this.x + Math.cos(a) * 2000,
+        y: this.y + Math.sin(a) * 2000,
       };
     }
   }
