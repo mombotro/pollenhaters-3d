@@ -1,17 +1,16 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
+import { randInt } from '../utils/math.js';
 
-export default class XpGem extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, value) {
-    super(scene, x, y, 'xp-gem');
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    
-    // Spread them out slightly if multiple drop
-    const vx = Phaser.Math.Between(-30, 30);
-    const vy = Phaser.Math.Between(-30, 30);
-    this.setVelocity(vx, vy);
-    this.setDrag(100, 100);
-
+export default class XpGem extends Entity {
+  constructor(x, y, value) {
+    super(x, y, 'xp-gem');
+    this.spriteScale = 0.4;
     this.xpValue = value;
+    this.vx = randInt(-30, 30);
+    this.vy = randInt(-30, 30);
+    this.drag = 0.05;
+    this.maxSpeed = 60;
+    World.add(this, 'gem');
   }
 }

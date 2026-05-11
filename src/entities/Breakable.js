@@ -1,42 +1,34 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
 import { BREAKABLE } from '../constants.js';
 import SoundSynth from '../systems/SoundSynth.js';
+import Pickup from './Pickup.js';
 
-export default class Breakable extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'pickups', 4);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    this.setImmovable(true);
-    this.setScale(0.08);
+export default class Breakable extends Entity {
+  constructor(x, y) {
+    super(x, y, 'breakable');
+    this.spriteScale = 0.8;
+    this.drag = 1;
+    this.maxSpeed = 0;
     this.hp = BREAKABLE.HP;
+    World.add(this, 'breakable');
   }
 
-  // Returns true if destroyed
   takeDamage(amount) {
     if (!this.active) return false;
-    
     this.hp -= amount;
-    this.scene._burst?.(this.x, this.y, 0x6b3a1f, this.hp <= 0 ? 8 : 4);
-
-    // Flash white when hit
+    World.getSystem('fx')?.burst(this.x, this.y, 0x6b3a1f, this.hp <= 0 ? 8 : 4);
     this.setTint(0xffffff);
-    this.scene.time.delayedCall(80, () => { if (this.active) this.clearTint(); });
-
-    if (this.hp <= 0) {
-      this._break();
-      return true;
-    }
+    World.after(80, () => { if (this.active) this.clearTint(); });
+    if (this.hp <= 0) { this._break(); return true; }
     return false;
   }
 
   _break() {
     SoundSynth.play('break');
     const type = Math.random() < 0.5 ? 'health' : 'xp';
-    this.scene._dropPickup(this.x, this.y, type);
-    this.setFrame(5);
-    this.setActive(false);
-    if (this.body) this.body.setEnable(false);
-    this.scene.time.delayedCall(400, () => { if (this.scene) this.destroy(); });
+    new Pickup(this.x, this.y, type);
+    World.after(400, () => this.destroy());
+    this.active = false;
   }
 }

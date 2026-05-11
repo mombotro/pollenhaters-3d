@@ -1,78 +1,66 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
 import { FLOWER, FLOWER_TYPES } from '../constants.js';
 
 const STATE = { YOUNG: 'young', MATURE: 'mature', OLD: 'old', DEAD: 'dead' };
 
-export default class Flower extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, type = 'COMMON', initialBloom = false) {
-    super(scene, x, y, 'flower');
-    scene.add.existing(this);
-    // Static body assigned by staticGroup.add() in GameScene — do NOT call physics.add.existing here
+export default class Flower extends Entity {
+  constructor(x, y, type = 'COMMON', initialBloom = false) {
+    super(x, y, 'flower');
+    this.drag = 1;
+    this.maxSpeed = 0;
 
-    this._type     = type;
-    this._typeDef  = FLOWER_TYPES[type];
-    this._state    = STATE.YOUNG;
+    this._type    = type;
+    this._typeDef = FLOWER_TYPES[type];
+    this._state   = STATE.YOUNG;
     this._matureAt = null;
     this._oldAt    = null;
-    this.onDead    = null;  // GameScene sets this after construction
+    this.onDead    = null;
 
     this.sapRemaining    = this._typeDef.sapAmount;
     this.pollenCollected = false;
     this.claimedBy       = null;
+    this.spriteScale     = initialBloom ? 1.0 : 0.5;
 
-    this.setFrame(this._typeDef.frame);
+    if (initialBloom) this._enterMature();
 
-    if (initialBloom) {
-      this._enterMature();
-    } else {
-      this._applyYoungVisuals();
-    }
+    World.add(this, 'flower');
   }
 
-  get flowerType()  { return this._type; }
-  get lifecycle() { return this._state; }
+  get flowerType() { return this._type; }
+  get lifecycle()  { return this._state; }
 
-  update(time) {
+  update(time, dt) {
     switch (this._state) {
       case STATE.YOUNG:
         if (this._matureAt === null) this._matureAt = time + FLOWER.YOUNG_DURATION;
         if (time >= this._matureAt) this._enterMature(time);
         break;
-
       case STATE.MATURE:
         if (this.sapRemaining <= 0 || time >= this._matureAt + this._typeDef.lifespan) {
           this._enterOld(time);
         }
         break;
-
       case STATE.OLD:
-        this.setAlpha(0.3 + 0.7 * (Math.sin(time / 300) * 0.5 + 0.5));
         if (time >= this._oldAt + FLOWER.OLD_DURATION) this._enterDead();
-        break;
-
-      case STATE.DEAD:
         break;
     }
   }
 
-  // Returns true if pollen was freshly collected (triggers pollination spawn in GameScene)
   collectPollen() {
-    if (this._state === STATE.YOUNG) return false;
-    if (this.pollenCollected) return false;
+    if (this._state === STATE.YOUNG || this.pollenCollected) return false;
     this.pollenCollected = true;
     return true;
   }
 
-  // Called by nearby butterflies each frame to speed growth and slow death.
-  receiveButterflyBoost(delta) {
+  receiveButterflyBoost(dt) {
     if (this._state === STATE.YOUNG && this._matureAt !== null) {
-      this._matureAt -= delta;           // grow faster
+      this._matureAt -= dt * 1000;
     } else if (this._state === STATE.OLD) {
-      this._oldAt += delta * 0.5;        // die slower (timer advances at half rate)
+      this._oldAt += dt * 1000 * 0.5;
     }
   }
 
-  // Returns amount of sap actually taken (0 if YOUNG)
   collectSap(amount) {
     if (this._state === STATE.YOUNG) return 0;
     const taken = Math.min(this.sapRemaining, amount);
@@ -80,16 +68,10 @@ export default class Flower extends Phaser.Physics.Arcade.Sprite {
     return taken;
   }
 
-  _applyYoungVisuals() {
-    this.setScale(0.06);
-    this.setAlpha(0.6);
-  }
-
   _enterMature(time = 0) {
     this._matureAt = time;
     this._state = STATE.MATURE;
-    this.setScale(0.1);
-    this.setAlpha(1);
+    this.spriteScale = 1.0;
     this.clearTint();
   }
 

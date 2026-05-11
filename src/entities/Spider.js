@@ -1,49 +1,40 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
+import { dist } from '../utils/math.js';
 import { SPIDER } from '../constants.js';
 
-export default class Spider extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'misc', 4);
-    this.setScale(0.05);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    this.setCollideWorldBounds(true);
+export default class Spider extends Entity {
+  constructor(x, y) {
+    super(x, y, 'spider');
+    this.spriteScale = 0.5;
+    this.drag = 0.015;
+    this.maxSpeed = SPIDER.SPEED;
     this._target = null;
     this._lastTarget = null;
     this._dwelling = false;
     this._dwellStart = 0;
-    this.setDrag(800, 800);
+    World.add(this, 'spider');
   }
 
-  // anchors: plain array of any objects with {x, y, active}
-  // onPlaceWeb: callback (a1, a2) => void
-  update(time, delta, anchors, onPlaceWeb) {
-    if (!this._target || !this._target.active) {
-      this._findTarget(anchors);
-    }
-    if (!this._target) {
-      this.setAcceleration(0, 0);
-      return;
-    }
+  update(time, dt, anchors, onPlaceWeb) {
+    if (!this._target || !this._target.active) this._findTarget(anchors);
+    if (!this._target) { this.ax = 0; this.ay = 0; return; }
 
-    const dist = Phaser.Math.Distance.Between(this.x, this.y, this._target.x, this._target.y);
-    if (!this._dwelling && dist > 40) {
-      this._movePhysics(this._target.x, this._target.y, SPIDER.SPEED);
+    const d = dist(this.x, this.y, this._target.x, this._target.y);
+    if (!this._dwelling && d > 40) {
+      this._moveToward(this._target.x, this._target.y);
     } else {
-      this.setAcceleration(0, 0);
-      this.setVelocity(0, 0);
+      this.ax = 0; this.ay = 0; this.vx = 0; this.vy = 0;
       if (!this._dwelling) {
         this._dwelling = true;
         this._dwellStart = time;
       } else if (time - this._dwellStart >= SPIDER.WEB_PLACE_TIME) {
-        let f2 = null;
-        let f2Dist = Infinity;
-        anchors.forEach(a => {
-          if (a === this._target || !a.active) return;
-          const d = Phaser.Math.Distance.Between(this._target.x, this._target.y, a.x, a.y);
-          if (d < 400 && d < f2Dist) { f2 = a; f2Dist = d; }
-        });
-
+        let f2 = null, f2Dist = Infinity;
+        for (const a of anchors) {
+          if (a === this._target || !a.active) continue;
+          const dd = dist(this._target.x, this._target.y, a.x, a.y);
+          if (dd < 400 && dd < f2Dist) { f2 = a; f2Dist = dd; }
+        }
         if (f2) onPlaceWeb(this._target, f2);
         this._dwelling = false;
         this._lastTarget = this._target;
@@ -54,19 +45,18 @@ export default class Spider extends Phaser.Physics.Arcade.Sprite {
 
   _findTarget(anchors) {
     const active = anchors.filter(a => a.active && a !== this._lastTarget);
-    if (!active.length) { this._target = null; return; }
-    this._target = active[Math.floor(Math.random() * active.length)];
+    this._target = active.length ? active[Math.floor(Math.random() * active.length)] : null;
   }
 
-  _movePhysics(tx, ty, speed) {
-    this.setMaxVelocity(speed, speed);
-    const dist = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
-    if (dist > 5) {
-      const ax = (tx - this.x) / dist;
-      const ay = (ty - this.y) / dist;
-      this.setAcceleration(ax * speed * 10, ay * speed * 10);
+  _moveToward(tx, ty) {
+    const speed = SPIDER.SPEED;
+    this.maxSpeed = speed;
+    const d = dist(this.x, this.y, tx, ty);
+    if (d > 5) {
+      this.ax = ((tx - this.x) / d) * speed * 10;
+      this.ay = ((ty - this.y) / d) * speed * 10;
     } else {
-      this.setAcceleration(0, 0);
+      this.ax = 0; this.ay = 0;
     }
   }
 }
