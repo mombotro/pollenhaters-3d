@@ -15,6 +15,7 @@ export default class Entity {
     this.active = true;
     this.visible = true;
     this.tint = null;
+    this.alpha = 1;
     this.spriteScale = 1;
   }
 
@@ -23,6 +24,7 @@ export default class Entity {
   setActive(v) { this.active = v; return this; }
   setTint(c) { this.tint = c; return this; }
   clearTint() { this.tint = null; return this; }
+  setAlpha(a) { this.alpha = a; return this; }
 
   destroy() {
     this.active = false;

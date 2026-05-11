@@ -1,59 +1,47 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
+import { dist } from '../utils/math.js';
 import { TOWER } from '../constants.js';
 
-export default class ResinTrap extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'misc', 8);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    this.setScale(0.1);
-    this.body.setImmovable(true);
+export default class ResinTrap extends Entity {
+  constructor(x, y) {
+    super(x, y, 'misc');
+    this.spriteScale = 0.1;
+    this.drag = 1;
+    this.maxSpeed = 0;
     this.towerType = 'resin';
     this._uses = TOWER.RESIN_TRAP_USES;
     this._inRadius = new Set();
+    World.add(this, 'tower');
   }
 
-  update(time, wasps) {
+  update(time) {
     if (!this.active) return;
-
     const currentInRadius = new Set();
-
-    wasps.getChildren().forEach(wasp => {
-      if (!wasp.active) return;
-      const dist = Phaser.Math.Distance.Between(this.x, this.y, wasp.x, wasp.y);
-      if (dist <= TOWER.RESIN_TRAP_RADIUS) {
+    const wasps = World.getByTag('wasp');
+    for (const wasp of wasps) {
+      if (!wasp.active) continue;
+      const d = dist(this.x, this.y, wasp.x, wasp.y);
+      if (d <= TOWER.RESIN_TRAP_RADIUS) {
         currentInRadius.add(wasp);
         wasp.slowedUntil = time + TOWER.RESIN_TRAP_DURATION;
-        // First frame this wasp enters the radius — consume a use
         if (!this._inRadius.has(wasp)) {
           this._uses--;
           this._updateVisual();
-          if (this._uses <= 0) {
-            this._break();
-            return;
-          }
+          if (this._uses <= 0) { this._break(); return; }
         }
       }
-    });
-
+    }
     this._inRadius = currentInRadius;
   }
 
   _updateVisual() {
-    const ratio = this._uses / TOWER.RESIN_TRAP_USES;
-    this.setAlpha(0.4 + 0.6 * ratio);
+    this.alpha = 0.4 + 0.6 * (this._uses / TOWER.RESIN_TRAP_USES);
   }
 
   _break() {
     this._inRadius.clear();
-    this.scene.tweens.add({
-      targets: this,
-      alpha: 0,
-      duration: 400,
-      onComplete: () => {
-        this.setActive(false).setVisible(false);
-        if (this.body) this.body.enable = false;
-      },
-    });
+    this.active = false;
+    World.after(400, () => this.destroy());
   }
 }

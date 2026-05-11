@@ -1,31 +1,26 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
 import { TOWER } from '../constants.js';
 
-export default class PoisonHoney extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'misc', 9);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    this.setScale(0.08);
-    this.body.setImmovable(true);
+export default class PoisonHoney extends Entity {
+  constructor(x, y) {
+    super(x, y, 'misc');
+    this.spriteScale = 0.08;
+    this.drag = 1;
+    this.maxSpeed = 0;
     this.towerType = 'poison-honey';
     this._uses = TOWER.POISON_HONEY_USES;
+    World.add(this, 'tower');
   }
 
   consume() {
     this._uses--;
-    this.setAlpha(0.3 + 0.7 * (this._uses / TOWER.POISON_HONEY_USES));
+    this.alpha = 0.3 + 0.7 * (this._uses / TOWER.POISON_HONEY_USES);
     if (this._uses <= 0) this._deplete();
   }
 
   _deplete() {
-    this.setActive(false);
-    if (this.body) this.body.enable = false;
-    this.scene.tweens.add({
-      targets: this,
-      alpha: 0,
-      duration: 400,
-      onComplete: () => { if (this.scene) this.destroy(); },
-    });
+    this.active = false;
+    World.after(400, () => this.destroy());
   }
 }

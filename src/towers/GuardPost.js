@@ -1,36 +1,37 @@
-import Phaser from 'phaser';
+import Entity from '../engine/Entity.js';
+import World from '../engine/World.js';
 import { TOWER } from '../constants.js';
 import GuardBee from '../entities/GuardBee.js';
 
-export default class GuardPost extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y) {
-    super(scene, x, y, 'misc', 0);
-    scene.add.existing(this);
-    scene.physics.add.existing(this);
-    this.setScale(0.1);
-    this.body.setImmovable(true);
+export default class GuardPost extends Entity {
+  constructor(x, y) {
+    super(x, y, 'misc');
+    this.spriteScale = 0.1;
+    this.drag = 1;
+    this.maxSpeed = 0;
     this.towerType = 'guard';
     this.hp = TOWER.GUARD_POST_HP;
     this.maxHp = TOWER.GUARD_POST_HP;
-    this._guard = new GuardBee(scene, x, y, this);
+    this._guard = new GuardBee(x, y, this);
+    World.add(this, 'tower', 'guard-post');
   }
 
   get guard() { return this._guard; }
 
   takeDamage(amount) {
+    if (!this.active) return;
     this.hp = Math.max(0, this.hp - amount);
     this.setTint(0xff4444);
-    this.scene.time.delayedCall(150, () => {
-      if (!this.active) return;
-      if (this.hp <= 0) { this.setFrame(1); this.clearTint(); }
+    World.after(150, () => {
+      if (this.hp > 0) this.clearTint();
       else this.clearTint();
     });
     if (this.hp <= 0) {
       this._guard.alive = false;
-      this._guard.setVisible(false).setActive(false);
-      if (this._guard.body) this._guard.body.enable = false;
-      this.setAlpha(0.45);
-      this.body.enable = false;
+      this._guard.visible = false;
+      this._guard.active = false;
+      this.alpha = 0.45;
+      this.active = false;
     }
   }
 }
