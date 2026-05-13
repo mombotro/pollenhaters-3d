@@ -4,7 +4,7 @@ export const WORLD = {
 };
 
 export const BEE = {
-  SPEED: 200,
+  SPEED: 500,
   HP: 5,
   SAP_CAPACITY: 10,
   STINGER_RATE: 800,         // ms between auto-fire shots
@@ -12,7 +12,7 @@ export const BEE = {
   STINGER_DAMAGE: 1,
   STINGER_RANGE: 200,
   RESPAWN_COST: 20,
-  DASH_SPEED_MULTIPLIER: 4,
+  DASH_SPEED_MULTIPLIER: 5,
   DASH_DURATION: 200,
   DASH_COOLDOWN: 2000,
 };

@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import Input from '../engine/Input.js';
 import MetaSave from '../systems/MetaSave.js';
 
 const UPGRADES = [
@@ -12,241 +12,273 @@ const UPGRADES = [
   { key: 'START_GUARD',       label: 'Start: Guard',   cost: 200, max: 1, desc: 'Begin with 1 guard post' },
   { key: 'START_SOLDIER',     label: 'Start: Soldier', cost: 120, max: 1, desc: 'Begin with 1 soldier bee escort' },
   { key: 'SOLDIER_DMG_META',  label: 'Soldier Damage', cost: 100, max: 3, desc: '+1 soldier damage per level' },
-  { key: 'QUICK_RUN_META',    label: 'Quick Run',      cost: 50,  max: 3, desc: 'Survive 1 minute less per level (min 7 min)' },
-  { key: 'LONG_RUN_META',     label: 'Longer Run',     cost: 75,  max: 99, desc: 'Survive 5 minutes more per level (no cap)' },
-  { key: 'HARD_MODE_META',    label: 'Hard Mode',      cost: 75,  max: 3,  desc: '+2 wasps per wave per level (self-challenge)' },
-  { key: 'EXTRA_HIVES_META',  label: 'Extra Hive',     cost: 200, max: 2,  desc: '+1 enemy wasp hive per level (harder, more threats)' },
+  { key: 'QUICK_RUN_META',    label: 'Quick Run',      cost: 50,  max: 3, desc: 'Survive 1 min less per level (min 7)' },
+  { key: 'LONG_RUN_META',     label: 'Longer Run',     cost: 75,  max: 99, desc: 'Survive 5 min more per level' },
+  { key: 'HARD_MODE_META',    label: 'Hard Mode',      cost: 75,  max: 3,  desc: '+2 wasps per wave per level' },
+  { key: 'EXTRA_HIVES_META',  label: 'Extra Hive',     cost: 200, max: 2,  desc: '+1 enemy wasp hive per level' },
 ];
 
-const ROW_H    = 52;
-const SCROLL_TOP    = 145;
-const SCROLL_BOTTOM = 625;
-const SCROLL_H      = SCROLL_BOTTOM - SCROLL_TOP;
-const COL_NAME  = 180;
-const COL_LVL   = 720;
-const COL_BTN   = 940;
+const W = 400, H = 240;
+const SCROLL_TOP = 50;
+const SCROLL_BOTTOM = 205;
+const SCROLL_H = SCROLL_BOTTOM - SCROLL_TOP;
+const ROW_H = 26;
+const MAX_SCROLL = Math.max(0, UPGRADES.length * ROW_H - SCROLL_H);
 
-export default class MetaUpgradeScene extends Phaser.Scene {
-  constructor() { super('MetaUpgradeScene'); }
+export default class MetaUpgradeScene {
+  constructor(data = {}) {
+    this._fromGameOver = data.fromGameOver ?? false;
+    this._scrollY = 0;
+    this._hoveredIdx = -1;
+    this._gpIdx = 0;
+    this._jelly = MetaSave.load().jellyBalance;
+    this._pendingReset = false;
+    this._pendingResetTimer = 0;
+
+    this._gpAWas = true;
+    this._gpBWas = true;
+    this._gpDirWas = true;
+  }
 
   create() {
-    const cx = 640;
-
-    this.add.text(cx, 45, 'UPGRADES', {
-      fontSize: '44px', color: '#ffd700', fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    this._jellyText = this.add.text(cx, 100, '', {
-      fontSize: '26px', color: '#ffcc00',
-    }).setOrigin(0.5);
-
-    // Scroll mask — clips the row area
-    const maskGfx = this.make.graphics({ add: false });
-    maskGfx.fillRect(0, SCROLL_TOP, 1280, SCROLL_H);
-    const scrollMask = maskGfx.createGeometryMask();
-
-    this._scrollY  = 0;
-    this._maxScroll = Math.max(0, UPGRADES.length * ROW_H - SCROLL_H);
-
-    this._rows = [];
-    UPGRADES.forEach((def, i) => {
-      const baseY = SCROLL_TOP + i * ROW_H + ROW_H / 2;
-
-      const nameText = this.add.text(COL_NAME, baseY, def.label, {
-        fontSize: '21px', color: '#ffffff',
-      }).setOrigin(0, 0.5).setMask(scrollMask);
-
-      const descText = this.add.text(COL_NAME, baseY + 16, def.desc, {
-        fontSize: '13px', color: '#888888',
-      }).setOrigin(0, 0.5).setMask(scrollMask);
-
-      const levelText = this.add.text(COL_LVL, baseY, '', {
-        fontSize: '21px', color: '#cccccc',
-      }).setOrigin(0.5, 0.5).setMask(scrollMask);
-
-      const btn = this.add.text(COL_BTN, baseY, '', {
-        fontSize: '19px', color: '#ffd700',
-      }).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true }).setMask(scrollMask);
-
-      btn.on('pointerover', () => { if (btn._enabled) btn.setColor('#ffffff'); });
-      btn.on('pointerout',  () => { if (btn._enabled) btn.setColor('#ffd700'); });
-      btn.on('pointerdown', () => {
-        if (!btn._enabled) return;
-        MetaSave.purchaseUpgrade(def.key, def.cost);
-        this._refresh();
-      });
-
-      this._rows.push({ def, nameText, descText, levelText, btn, baseY });
-    });
-
-    // Scroll arrows (fixed, above/below viewport)
-    this._arrowUp   = this.add.text(cx, SCROLL_TOP - 14, '▲', { fontSize: '18px', color: '#888888' }).setOrigin(0.5);
-    this._arrowDown = this.add.text(cx, SCROLL_BOTTOM + 14, '▼', { fontSize: '18px', color: '#888888' }).setOrigin(0.5);
-
-    // Separator lines
-    const sepGfx = this.add.graphics();
-    sepGfx.lineStyle(1, 0x444444, 1);
-    sepGfx.lineBetween(100, SCROLL_TOP - 1, 1180, SCROLL_TOP - 1);
-    sepGfx.lineBetween(100, SCROLL_BOTTOM + 1, 1180, SCROLL_BOTTOM + 1);
-
-    // Footer buttons (fixed)
-    this._refundBtn = this.add.text(cx - 220, 660, '[ REFUND ALL ]', {
-      fontSize: '20px', color: '#ffaa00',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    this._refundBtn.on('pointerover', () => this._refundBtn.setColor('#ffffff'));
-    this._refundBtn.on('pointerout',  () => this._refundBtn.setColor('#ffaa00'));
-    this._refundBtn.on('pointerdown', () => this._doRefund());
-
-    this._resetBtn = this.add.text(cx + 220, 660, '[ RESET SAVE ]', {
-      fontSize: '20px', color: '#ff4444',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    this._resetBtn.on('pointerover', () => { if (!this._resetBtn._pending) this._resetBtn.setColor('#ff8888'); });
-    this._resetBtn.on('pointerout',  () => { if (!this._resetBtn._pending) this._resetBtn.setColor('#ff4444'); });
-    this._resetBtn.on('pointerdown', () => this._doReset());
-
-    this._backBtn = this.add.text(cx, 703, '[ BACK TO MENU ]', {
-      fontSize: '26px', color: '#ffd700',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    this._backBtn.on('pointerover', () => this._backBtn.setColor('#ffffff'));
-    this._backBtn.on('pointerout',  () => this._backBtn.setColor('#ffd700'));
-    this._backBtn.on('pointerdown', () => this.scene.start('MenuScene'));
-
-    // Mouse wheel scroll
-    this.input.on('wheel', (_ptr, _objs, _dx, deltaY) => {
-      this._doScroll(deltaY > 0 ? 48 : -48);
-    });
-
-    // Gamepad nav arrays
-    this._navObjs    = [...this._rows.map(r => r.nameText), this._refundBtn, this._resetBtn, this._backBtn];
-    this._navColors  = [...this._rows.map(() => '#ffffff'), '#ffaa00', '#ff4444', '#ffd700'];
-    this._navActions = [
-      ...this._rows.map(r => () => {
-        if (r.btn._enabled) { MetaSave.purchaseUpgrade(r.def.key, r.def.cost); this._refresh(); }
-      }),
-      () => this._doRefund(),
-      () => this._doReset(),
-      () => this.scene.start('MenuScene'),
-    ];
-    this._gpIdx    = 0;
-    this._gpAWas   = true;
-    this._gpBWas   = true;
-    this._gpDirWas = true;
-
-    this._refresh();
-  }
-
-  _doScroll(dy) {
-    this._scrollY = Phaser.Math.Clamp(this._scrollY + dy, 0, this._maxScroll);
-    this._repositionRows();
-    this._updateArrows();
-  }
-
-  _repositionRows() {
-    this._rows.forEach((row, i) => {
-      const y = SCROLL_TOP + i * ROW_H + ROW_H / 2 - this._scrollY;
-      row.nameText.setY(y);
-      row.descText.setY(y + 16);
-      row.levelText.setY(y);
-      row.btn.setY(y);
-    });
-  }
-
-  _updateArrows() {
-    this._arrowUp.setAlpha(this._scrollY > 0 ? 1 : 0.2);
-    this._arrowDown.setAlpha(this._scrollY < this._maxScroll ? 1 : 0.2);
-  }
-
-  _ensureVisible(rowIdx) {
-    if (rowIdx >= this._rows.length) return;
-    const rowTop = rowIdx * ROW_H;
-    const rowBot = rowTop + ROW_H;
-    if (rowTop < this._scrollY) {
-      this._doScroll(rowTop - this._scrollY);
-    } else if (rowBot > this._scrollY + SCROLL_H) {
-      this._doScroll(rowBot - (this._scrollY + SCROLL_H));
-    }
-  }
-
-  _doRefund() {
-    const s = MetaSave.load();
-    UPGRADES.forEach(def => {
-      s.jellyBalance += (s.upgrades[def.key] ?? 0) * def.cost;
-      s.upgrades[def.key] = 0;
-    });
-    MetaSave.save(s);
-    this._refresh();
-  }
-
-  _doReset() {
-    if (!this._resetBtn._pending) {
-      this._resetBtn._pending = true;
-      this._resetBtn.setText('[ CONFIRM? ]').setColor('#ff8888');
-      this.time.delayedCall(3000, () => {
-        if (this._resetBtn._pending) {
-          this._resetBtn._pending = false;
-          this._resetBtn.setText('[ RESET SAVE ]').setColor('#ff4444');
-          this._gpRefresh();
+    this._canvas = document.getElementById('game');
+    this._ctx = this._canvas.getContext('2d');
+    
+    this._onMove = (e) => {
+      const rect = this._canvas.getBoundingClientRect();
+      const scaleY = this._canvas.height / rect.height;
+      const cy = (e.clientY - rect.top) * scaleY;
+      
+      this._hoveredIdx = -1;
+      if (cy >= SCROLL_TOP && cy <= SCROLL_BOTTOM) {
+        const listY = cy - SCROLL_TOP + this._scrollY;
+        const rowIdx = Math.floor(listY / ROW_H);
+        if (rowIdx >= 0 && rowIdx < UPGRADES.length) {
+          this._hoveredIdx = rowIdx;
+          this._gpIdx = rowIdx;
         }
-      });
-    } else {
-      this._resetBtn._pending = false;
-      MetaSave.reset();
-      this._resetBtn.setText('[ RESET SAVE ]').setColor('#ff4444');
-      this._refresh();
+      } else if (cy > 210) {
+        const scaleX = this._canvas.width / rect.width;
+        const cx = (e.clientX - rect.left) * scaleX;
+        if (cx < 100) this._hoveredIdx = 100; // Refund
+        else if (cx > 300) this._hoveredIdx = 101; // Reset
+        else this._hoveredIdx = 102; // Back
+        this._gpIdx = UPGRADES.length + (this._hoveredIdx - 100);
+      }
+    };
+
+    this._onClick = (e) => {
+      this._onMove(e);
+      this._doAction(this._hoveredIdx);
+    };
+
+    this._onWheel = (e) => {
+      this._scrollY = Math.max(0, Math.min(MAX_SCROLL, this._scrollY + (e.deltaY > 0 ? 30 : -30)));
+    };
+
+    this._canvas.addEventListener('pointermove', this._onMove);
+    this._canvas.addEventListener('pointerdown', this._onClick);
+    this._canvas.addEventListener('wheel', this._onWheel);
+  }
+
+  update(dt, time) {
+    if (this._pendingResetTimer > 0 && time > this._pendingResetTimer) {
+      this._pendingReset = false;
+      this._pendingResetTimer = 0;
+    }
+
+    if (Input.justDown('Escape')) {
+      this._goBack();
+      return;
+    }
+
+    if (Input.justDown('ArrowDown') || Input.justDown('s') || Input.justDown('S')) {
+      this._gpIdx = (this._gpIdx + 1) % (UPGRADES.length + 3);
+      this._ensureVisible(this._gpIdx);
+    }
+    if (Input.justDown('ArrowUp') || Input.justDown('w') || Input.justDown('W')) {
+      this._gpIdx = (this._gpIdx - 1 + UPGRADES.length + 3) % (UPGRADES.length + 3);
+      this._ensureVisible(this._gpIdx);
+    }
+    if (Input.justDown('Enter') || Input.justDown(' ')) {
+      this._doAction(this._gpIdx < UPGRADES.length ? this._gpIdx : 100 + (this._gpIdx - UPGRADES.length));
+    }
+
+    const pad = navigator.getGamepads?.()[0];
+    if (pad) {
+      const gpUp = (pad.axes[1] ?? 0) < -0.4 || pad.buttons[12]?.pressed;
+      const gpDown = (pad.axes[1] ?? 0) > 0.4 || pad.buttons[13]?.pressed;
+      const anyDir = gpUp || gpDown;
+      
+      if (anyDir && !this._gpDirWas) {
+        if (gpUp) this._gpIdx = (this._gpIdx - 1 + UPGRADES.length + 3) % (UPGRADES.length + 3);
+        if (gpDown) this._gpIdx = (this._gpIdx + 1) % (UPGRADES.length + 3);
+        this._ensureVisible(this._gpIdx);
+      }
+      this._gpDirWas = anyDir;
+
+      const gpA = pad.buttons[0]?.pressed ?? false;
+      if (gpA && !this._gpAWas) {
+        this._doAction(this._gpIdx < UPGRADES.length ? this._gpIdx : 100 + (this._gpIdx - UPGRADES.length));
+      }
+      this._gpAWas = gpA;
+
+      const gpB = pad.buttons[1]?.pressed ?? false;
+      if (gpB && !this._gpBWas) {
+        this._goBack();
+        return;
+      }
+      this._gpBWas = gpB;
+    }
+
+    this._render();
+  }
+
+  _ensureVisible(idx) {
+    if (idx >= UPGRADES.length) return;
+    const itemTop = idx * ROW_H;
+    const itemBot = itemTop + ROW_H;
+    if (itemTop < this._scrollY) {
+      this._scrollY = itemTop;
+    } else if (itemBot > this._scrollY + SCROLL_H) {
+      this._scrollY = itemBot - SCROLL_H;
     }
   }
 
-  _refresh() {
+  _doAction(idx) {
+    if (idx < 0) return;
+    if (idx < UPGRADES.length) {
+      const def = UPGRADES[idx];
+      const s = MetaSave.load();
+      const current = s.upgrades[def.key] ?? 0;
+      if (current < def.max && s.jellyBalance >= def.cost) {
+        MetaSave.purchaseUpgrade(def.key, def.cost);
+        this._jelly = MetaSave.load().jellyBalance;
+        import('../systems/SoundSynth.js').then(({ default: S }) => S.play('spawn'));
+      } else {
+        import('../systems/SoundSynth.js').then(({ default: S }) => S.play('hit'));
+      }
+    } else if (idx === 100) { // Refund All
+      const s = MetaSave.load();
+      UPGRADES.forEach(def => {
+        s.jellyBalance += (s.upgrades[def.key] ?? 0) * def.cost;
+        s.upgrades[def.key] = 0;
+      });
+      MetaSave.save(s);
+      this._jelly = s.jellyBalance;
+      import('../systems/SoundSynth.js').then(({ default: S }) => S.play('hit'));
+    } else if (idx === 101) { // Reset Save
+      if (!this._pendingReset) {
+        this._pendingReset = true;
+        this._pendingResetTimer = Date.now() + 3000;
+      } else {
+        MetaSave.reset();
+        this._pendingReset = false;
+        this._jelly = MetaSave.load().jellyBalance;
+      }
+    } else if (idx === 102) { // Back
+      this._goBack();
+    }
+  }
+
+  _goBack() {
+    import('./index.js').then(({ transition }) =>
+      import('./MenuScene.js').then(({ default: MenuScene }) => transition(MenuScene))
+    );
+  }
+
+  _render() {
+    const ctx = this._ctx;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0500';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('UPGRADES', W / 2, 20);
+
+    ctx.font = '12px monospace';
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText(`Royal Jelly: ${this._jelly}`, W / 2, 38);
+
+    // Separators
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(10, SCROLL_TOP - 1); ctx.lineTo(390, SCROLL_TOP - 1);
+    ctx.moveTo(10, SCROLL_BOTTOM + 1); ctx.lineTo(390, SCROLL_BOTTOM + 1);
+    ctx.stroke();
+
+    // Arrows
+    ctx.fillStyle = this._scrollY > 0 ? '#888' : '#333';
+    ctx.fillText('▲', W / 2, SCROLL_TOP - 4);
+    ctx.fillStyle = this._scrollY < MAX_SCROLL ? '#888' : '#333';
+    ctx.fillText('▼', W / 2, SCROLL_BOTTOM + 12);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, SCROLL_TOP, W, SCROLL_H);
+    ctx.clip();
+
     const s = MetaSave.load();
-    this._jellyText.setText(`Royal Jelly: ${s.jellyBalance}`);
-    this._rows.forEach(({ def, levelText, btn }) => {
+
+    for (let i = 0; i < UPGRADES.length; i++) {
+      const def = UPGRADES[i];
+      const y = SCROLL_TOP + i * ROW_H - this._scrollY;
+      
+      if (y + ROW_H < SCROLL_TOP || y > SCROLL_BOTTOM) continue;
+
+      const isHovered = (this._hoveredIdx === i) || (this._gpIdx === i);
+      if (isHovered) {
+        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillRect(10, y, 380, ROW_H);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(def.label, 15, y + 10);
+      
+      ctx.font = '7px monospace';
+      ctx.fillStyle = '#888';
+      ctx.fillText(def.desc, 15, y + 20);
+
       const level = s.upgrades[def.key] ?? 0;
+      ctx.textAlign = 'center';
+      ctx.font = '10px monospace';
+      ctx.fillStyle = '#ccc';
+      ctx.fillText(`${level}/${def.max}`, 260, y + 14);
+
       const maxed = level >= def.max;
       const canAfford = s.jellyBalance >= def.cost;
-      levelText.setText(`${level} / ${def.max}`);
-      if (maxed) {
-        btn.setText('MAXED').setColor('#555555');
-        btn._enabled = false;
-      } else if (canAfford) {
-        btn.setText(`[ BUY ${def.cost}j ]`).setColor('#ffd700');
-        btn._enabled = true;
-      } else {
-        btn.setText(`[ BUY ${def.cost}j ]`).setColor('#555555');
-        btn._enabled = false;
-      }
-    });
-    this._gpRefresh();
-    this._updateArrows();
-  }
-
-  _gpRefresh() {
-    if (!this._navObjs) return;
-    this._navObjs.forEach((obj, i) => {
-      obj.setColor(i === this._gpIdx ? '#ffff44' : this._navColors[i]);
-    });
-  }
-
-  update() {
-    const gp  = this.input.gamepad;
-    const pad = gp?.total > 0 ? gp.gamepads.find(p => p?.connected) : null;
-    if (!pad) return;
-
-    const dirDown = pad.buttons[12]?.pressed || pad.buttons[13]?.pressed ||
-                    Math.abs(pad.leftStick.y) > 0.4;
-    if (dirDown && !this._gpDirWas) {
-      const dy = (pad.buttons[12]?.pressed || pad.leftStick.y < -0.4) ? -1 : 1;
-      this._gpIdx = (this._gpIdx + dy + this._navObjs.length) % this._navObjs.length;
-      this._gpRefresh();
-      if (this._gpIdx < this._rows.length) this._ensureVisible(this._gpIdx);
+      
+      ctx.fillStyle = maxed ? '#555' : canAfford ? (isHovered ? '#fff' : '#ffd700') : '#555';
+      ctx.font = isHovered && !maxed && canAfford ? 'bold 10px monospace' : '10px monospace';
+      ctx.fillText(maxed ? 'MAXED' : `[ ${def.cost}j ]`, 340, y + 14);
     }
-    this._gpDirWas = dirDown;
+    ctx.restore();
 
-    const aDown = pad.buttons[0]?.pressed ?? false;
-    if (aDown && !this._gpAWas) this._navActions[this._gpIdx]?.();
-    this._gpAWas = aDown;
+    ctx.font = '10px monospace';
+    const refundActive = (this._hoveredIdx === 100) || (this._gpIdx === UPGRADES.length);
+    ctx.fillStyle = refundActive ? '#fff' : '#ffaa00';
+    ctx.fillText('[ REFUND ALL ]', 60, 225);
 
-    const bDown = pad.buttons[1]?.pressed ?? false;
-    if (bDown && !this._gpBWas) this.scene.start('MenuScene');
-    this._gpBWas = bDown;
+    const resetActive = (this._hoveredIdx === 101) || (this._gpIdx === UPGRADES.length + 1);
+    ctx.fillStyle = resetActive ? '#ff8888' : '#ff4444';
+    ctx.fillText(this._pendingReset ? '[ CONFIRM? ]' : '[ RESET SAVE ]', 340, 225);
+
+    const backActive = (this._hoveredIdx === 102) || (this._gpIdx === UPGRADES.length + 2);
+    ctx.font = backActive ? 'bold 14px monospace' : '14px monospace';
+    ctx.fillStyle = backActive ? '#fff' : '#ffd700';
+    ctx.fillText('[ MENU ]', W / 2, 225);
   }
+
+  destroy() {
+    this._canvas.removeEventListener('pointermove', this._onMove);
+    this._canvas.removeEventListener('pointerdown', this._onClick);
+    this._canvas.removeEventListener('wheel', this._onWheel);
+  }
+
+  getCamera() { return null; }
 }

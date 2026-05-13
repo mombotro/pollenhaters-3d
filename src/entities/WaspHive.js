@@ -6,7 +6,7 @@ export default class WaspHive extends Entity {
   constructor(x, y) {
     super(x, y, 'hive');
     this.spriteScale = 1.2;
-    this.spriteFrame = 1;
+    this.spriteFrame = 0;
     this.tint = null;
     this.drag = 1;
     this.maxSpeed = 0;

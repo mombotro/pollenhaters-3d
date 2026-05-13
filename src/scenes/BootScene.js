@@ -1,3 +1,5 @@
+import Model3D from '../renderer/Model3D.js';
+
 export default class BootScene {
   constructor() {}
 
@@ -5,16 +7,16 @@ export default class BootScene {
     window.__sprites = window.__sprites ?? {};
 
     // Sheets: { path, fw, fh, key }
+    const base = import.meta.env.BASE_URL;
     const sheets = [
-      { key: 'bee-sheet',   path: '/bee_sheet.png',      fw: 48,  fh: 48  },
-      { key: 'flower',      path: '/flowers-sheet.png',  fw: 400, fh: 400 },
-      { key: 'hive',        path: '/hives.png',          fw: 400, fh: 400 },
-      { key: 'pickup',      path: '/pickups.png',        fw: 400, fh: 400 },
-      { key: 'misc',        path: '/misc.png',           fw: 400, fh: 400 },
-      { key: 'wasp',        path: '/wasp.png',           fw: 52,  fh: 52  },
+      { key: 'bee-sheet',   path: `${base}bee_sheet.png`,      fw: 48,  fh: 48  },
+      { key: 'flower',      path: `${base}flowers-sheet.png`,  fw: 400, fh: 400 },
+      { key: 'hive',        path: `${base}hives.png`,          fw: 400, fh: 400 },
+      { key: 'pickup',      path: `${base}pickups.png`,        fw: 400, fh: 400 },
+      { key: 'misc',        path: `${base}misc.png`,           fw: 400, fh: 400 },
+      { key: 'wasp',        path: `${base}wasp.png`,           fw: 52,  fh: 52  },
     ];
 
-    let loaded = 0;
     const done = () => {
       import('./index.js').then(({ transition }) =>
         import('./MenuScene.js').then(({ default: MenuScene }) =>
@@ -62,12 +64,32 @@ export default class BootScene {
     webImg.src = off.toDataURL();
     window.__sprites['web'] = { img: webImg, fw: 48, fh: 48 };
 
+    let totalAssets = sheets.length + 1; // +1 for bee model
+    let assetsLoaded = 0;
+    const checkDone = () => { if (++assetsLoaded === totalAssets) done(); };
+
     for (const { key, path, fw, fh } of sheets) {
       const img = new Image();
-      img.onload  = () => { window.__sprites[key] = { img, fw, fh }; loaded++; if (loaded === sheets.length) done(); };
-      img.onerror = () => { loaded++; if (loaded === sheets.length) done(); };
+      img.onload  = () => { window.__sprites[key] = { img, fw, fh }; checkDone(); };
+      img.onerror = () => checkDone();
       img.src = path;
     }
+
+    // Load 3D bee model
+    const beeTexImg = new Image();
+    beeTexImg.src = `${base}bee.png`;
+    beeTexImg.onload = () => {
+      fetch(`${base}bee.obj`)
+        .then(r => r.text())
+        .then(objText => {
+          const m = new Model3D(objText, beeTexImg);
+          m.preRender(16, 96, -Math.PI / 6);
+          window.__beeModel = m;
+          checkDone();
+        })
+        .catch(() => checkDone());
+    };
+    beeTexImg.onerror = () => checkDone();
   }
 
   destroy() {}

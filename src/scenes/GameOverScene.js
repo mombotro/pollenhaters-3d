@@ -58,7 +58,7 @@ export default class GameOverScene {
     ctx.fillText('[ BACK TO MENU ]', W / 2, 185);
     ctx.textAlign = 'left';
 
-    if (this._clicked || Input.justDown('Enter') || Input.justDown(' ')) {
+    if (this._clicked || Input.justDown('Enter') || Input.justDown(' ') || Input.gamepad.justDown(0)) {
       this._clicked = false;
       this._goMenu();
     }
@@ -66,7 +66,7 @@ export default class GameOverScene {
 
   _goMenu() {
     import('./index.js').then(({ transition }) =>
-      import('./MenuScene.js').then(({ default: MenuScene }) => transition(MenuScene))
+      import('./MetaUpgradeScene.js').then(({ default: MetaUpgradeScene }) => transition(MetaUpgradeScene, { fromGameOver: true }))
     );
   }
 

@@ -1,12 +1,12 @@
 import Input from './engine/Input.js';
 import World from './engine/World.js';
-import BillboardRenderer from './renderer/BillboardRenderer.js';
+import IsometricRenderer from './renderer/IsometricRenderer.js';
 import HUD from './renderer/HUD.js';
 import { transition, update as sceneUpdate, getCurrent } from './scenes/index.js';
 import BootScene from './scenes/BootScene.js';
 
 const canvas = document.getElementById('game');
-const renderer = new BillboardRenderer(canvas);
+const renderer = new IsometricRenderer(canvas);
 const hud = new HUD(canvas.getContext('2d'));
 
 Input.init();
@@ -18,10 +18,9 @@ function loop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
-  Input.poll();
   World.update(dt * 1000);
-
   sceneUpdate(dt, timestamp);
+  Input.poll(); // poll after game reads input so justDown isn't cleared before it's seen
 
   const scene = getCurrent();
   const camera = scene?.getCamera?.();
@@ -63,6 +62,7 @@ function loop(timestamp) {
         reqXp: scene.reqXp ?? 100,
       });
     }
+    scene.renderOverlay?.(hud.ctx);
   }
 
   requestAnimationFrame(loop);

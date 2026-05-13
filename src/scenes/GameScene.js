@@ -2,6 +2,9 @@ import World from '../engine/World.js';
 import Camera from '../engine/Camera.js';
 import { update as physicsUpdate } from '../engine/Physics.js';
 import Input from '../engine/Input.js';
+import BuildMenu from '../ui/BuildMenu.js';
+import LevelUpMenu from '../ui/LevelUpMenu.js';
+import PauseMenu from '../ui/PauseMenu.js';
 import {
   WORLD, BEE, HIVE, WASP, WAVE, FLOWER, TIMER, WORKER, TOWER, XP,
   BUTTERFLY, SPIDER, WEB, BREAKABLE, SOLDIER, PICKUP, pickFlowerType,
@@ -101,29 +104,65 @@ export default class GameScene {
     World.addSystem('waspHive', this.waspHiveSystem);
 
     World.addSystem('fx', { burst: () => {} });
-    World.addSystem('game', { collectXp: (val) => this._collectXp(val) });
+    World.addSystem('game', {
+      collectXp: (val) => this._collectXp(val),
+      isPlacing: () => !!this._placementKey
+    });
+
+    this._placementKey = null;
+
+    const _canvas = document.getElementById('game');
+    this.pauseMenu = new PauseMenu(_canvas, key => this._onPauseSelect(key));
+    this.buildMenu = new BuildMenu(_canvas, this.resources, key => {
+      if (key === 'recruit-worker' || key === 'recruit-soldier') {
+        const cost = key === 'recruit-worker' ? WORKER.COST : SOLDIER.COST;
+        if (this.resources.spendHoney(cost)) {
+          if (key === 'recruit-worker') new WorkerBee(this.hiveX, this.hiveY);
+          else this._recruitSoldier(true);
+          SoundSynth.play('spawn');
+        } else {
+          SoundSynth.play('hit');
+        }
+      } else {
+        this._enterPlacement(key);
+      }
+    });
+    this.levelUpMenu = new LevelUpMenu(key => {
+      this.upgrades.purchase(key);
+      this._applyUpgrade(key);
+    });
+    World.addSystem('buildMenu', {
+      toggle: () => {
+        if (this._placementKey) this._exitPlacement();
+        else this.buildMenu.toggle();
+      },
+    });
+
+    if (this._playground) this._initPlaygroundMenu();
 
     this._spawnInitialFlowers();
     this.hive = new Hive(this.hiveX, this.hiveY);
 
     this.player = new PlayerBee(
       this.hiveX, this.hiveY + 80,
-      (x, y, range, damage, speed, backwardAngle) => {
-        let hasTarget = false;
-        for (const w of World.getByTag('wasp')) {
-          if (w.active && dist(x, y, w.x, w.y) < range) { hasTarget = true; break; }
-        }
-        if (!hasTarget) {
-          for (const b of World.getByTag('breakable')) {
-            if (b.active && dist(x, y, b.x, b.y) < range) { hasTarget = true; break; }
+      (x, y, range, damage, speed, backwardAngle, forced = false) => {
+        if (!forced) {
+          let hasTarget = false;
+          for (const w of World.getByTag('wasp')) {
+            if (w.active && dist(x, y, w.x, w.y) < range) { hasTarget = true; break; }
           }
-        }
-        if (!hasTarget) {
-          for (const wh of this.waspHiveSystem.hives) {
-            if (wh.hp > 0 && dist(x, y, wh.x, wh.y) < range) { hasTarget = true; break; }
+          if (!hasTarget) {
+            for (const b of World.getByTag('breakable')) {
+              if (b.active && dist(x, y, b.x, b.y) < range) { hasTarget = true; break; }
+            }
           }
+          if (!hasTarget) {
+            for (const wh of this.waspHiveSystem.hives) {
+              if (wh.hp > 0 && dist(x, y, wh.x, wh.y) < range) { hasTarget = true; break; }
+            }
+          }
+          if (!hasTarget) return false;
         }
-        if (!hasTarget) return false;
         const spawnX = x + Math.cos(backwardAngle) * 14;
         const spawnY = y + Math.sin(backwardAngle) * 14;
         new Stinger(spawnX, spawnY, damage, range, speed,
@@ -134,7 +173,8 @@ export default class GameScene {
     );
     World.addSystem('player', this.player);
 
-    this.camera = new Camera({ offset: 120, lerpAngle: 0.12 });
+    this.camera = new Camera({ offset: 0, lerpAngle: 0.12, pitch: Math.PI / 6, fixedAngle: Math.PI * 1.75 });
+    World.addSystem('camera', this.camera);
 
     // Meta upgrades
     this._metaSpeedBonus = (_u.BEE_SPEED_META ?? 0) * 20;
@@ -154,6 +194,46 @@ export default class GameScene {
 
   update(dt, time) {
     if (this._ended) return;
+
+    if (Input.justDown('Escape') || Input.gamepad.justDown(9)) {
+      if (this.buildMenu?.visible) {
+        this.buildMenu.hide();
+      } else if (this.levelUpMenu?.visible) {
+        // do nothing
+      } else if (this._placementKey) {
+        this._exitPlacement();
+      } else {
+        this.pauseMenu.toggle();
+      }
+    }
+
+    if (this.pauseMenu?.visible) {
+      this.pauseMenu.update();
+      return;
+    }
+
+    if (this.levelUpMenu?.visible) {
+      this.levelUpMenu.update();
+      return;
+    }
+
+    if (this.buildMenu?.visible) {
+      this.buildMenu.update();
+      return;
+    }
+
+    if (this._placementKey) {
+      if (Input.justDown('x') || Input.justDown('X') || Input.gamepad.justDown(2)) {
+        if (this._placeTower(this._placementKey, this.player.x, this.player.y)) {
+          this._exitPlacement();
+        } else {
+          SoundSynth.play('hit'); // Error sound if cannot afford
+          this._exitPlacement();
+        }
+      } else if (Input.justDown('b') || Input.justDown('B') || Input.gamepad.justDown(1) || Input.mouseJustDown(2)) {
+        this._exitPlacement();
+      }
+    }
 
     const scaledDelta = dt * 1000;
     this._gameTime += scaledDelta;
@@ -214,7 +294,7 @@ export default class GameScene {
       if (!wasp.active) continue;
       for (const pickup of World.getByTag('pickup')) {
         if (!pickup.active || pickup.type !== 'honey') continue;
-        if (dist(wasp.x, wasp.y, pickup.x, pickup.y) < 30) {
+        if (dist(wasp.x, wasp.y, pickup.x, pickup.y) < 60) {
           this.waspHiveSystem.onHoneyStolen(PICKUP.HONEY_AMOUNT);
           pickup.destroy();
         }
@@ -269,6 +349,7 @@ export default class GameScene {
     }
 
     this.camera.follow(this.player, dt);
+    this.buildMenu?.update();
 
     this._checkPlayerFlowerOverlap();
     this._checkPlayerHiveOverlap();
@@ -289,6 +370,8 @@ export default class GameScene {
     if (!this._playground) {
       const wave = this.waveManager.update(this._playTime);
       if (wave) this.waspHiveSystem.spawnWave(wave);
+    } else {
+      this._updatePlaygroundMenu();
     }
     this.waspHiveSystem.update(this._gameTime);
 
@@ -298,7 +381,7 @@ export default class GameScene {
   _checkPlayerFlowerOverlap() {
     if (!this.player.alive) return;
     for (const flower of World.getByTag('flower')) {
-      if (!flower.active || dist(this.player.x, this.player.y, flower.x, flower.y) > 30) continue;
+      if (!flower.active || dist(this.player.x, this.player.y, flower.x, flower.y) > 75) continue;
       const space = this.player._sapCapacity - this.resources.getSapCarried('player');
       if (space > 0 && flower.sapRemaining > 0) {
         if (flower.collectPollen()) this.pollination.pollinate({ x: flower.x, y: flower.y }, this._gameTime);
@@ -319,7 +402,7 @@ export default class GameScene {
 
   _checkPlayerHiveOverlap() {
     if (!this.player.alive || !this.hive?.active) return;
-    if (dist(this.player.x, this.player.y, this.hive.x, this.hive.y) > 60) return;
+    if (dist(this.player.x, this.player.y, this.hive.x, this.hive.y) > 120) return;
     if (this.resources.getSapCarried('player') > 0) {
       SoundSynth.play('deposit');
       this.resources.depositSap('player');
@@ -330,7 +413,7 @@ export default class GameScene {
     if (!this.player.alive) return;
     for (const pickup of World.getByTag('pickup')) {
       if (!pickup.active) continue;
-      if (dist(this.player.x, this.player.y, pickup.x, pickup.y) <= 20) pickup.onCollect(this.player);
+      if (dist(this.player.x, this.player.y, pickup.x, pickup.y) <= 50) pickup.onCollect(this.player);
     }
   }
 
@@ -338,7 +421,7 @@ export default class GameScene {
     for (const stinger of World.getByTag('player-stinger')) {
       if (!stinger.active) continue;
       for (const wasp of World.getByTag('wasp')) {
-        if (!wasp.active || dist(stinger.x, stinger.y, wasp.x, wasp.y) > 12) continue;
+        if (!wasp.active || dist(stinger.x, stinger.y, wasp.x, wasp.y) > 36) continue;
         stinger.destroy();
         SoundSynth.play('hit');
         if (wasp.takeDamage(stinger.damage)) {
@@ -354,7 +437,7 @@ export default class GameScene {
     for (const stinger of World.getByTag('player-stinger')) {
       if (!stinger.active) continue;
       for (const b of World.getByTag('breakable')) {
-        if (!b.active || dist(stinger.x, stinger.y, b.x, b.y) > 20) continue;
+        if (!b.active || dist(stinger.x, stinger.y, b.x, b.y) > 50) continue;
         stinger.destroy();
         b.takeDamage(stinger.damage);
         break;
@@ -366,7 +449,7 @@ export default class GameScene {
     if (!this.player.alive) return;
     for (const stinger of World.getByTag('enemy-stinger')) {
       if (!stinger.active) continue;
-      if (dist(stinger.x, stinger.y, this.player.x, this.player.y) <= 12) {
+      if (dist(stinger.x, stinger.y, this.player.x, this.player.y) <= 36) {
         stinger.destroy();
         if (this.player.takeDamage(stinger.damage)) this._onPlayerDeath();
       }
@@ -377,7 +460,7 @@ export default class GameScene {
     for (const stinger of World.getByTag('enemy-stinger')) {
       if (!stinger.active) continue;
       for (const worker of World.getByTag('worker')) {
-        if (!worker.active || !worker.alive || dist(stinger.x, stinger.y, worker.x, worker.y) > 12) continue;
+        if (!worker.active || !worker.alive || dist(stinger.x, stinger.y, worker.x, worker.y) > 36) continue;
         stinger.destroy();
         worker.takeDamage(stinger.damage);
         break;
@@ -389,7 +472,7 @@ export default class GameScene {
     for (const stinger of World.getByTag('enemy-stinger')) {
       if (!stinger.active) continue;
       for (const soldier of World.getByTag('soldier')) {
-        if (!soldier.active || !soldier.alive || dist(stinger.x, stinger.y, soldier.x, soldier.y) > 12) continue;
+        if (!soldier.active || !soldier.alive || dist(stinger.x, stinger.y, soldier.x, soldier.y) > 36) continue;
         stinger.destroy();
         soldier.takeDamage(stinger.damage);
         break;
@@ -401,7 +484,7 @@ export default class GameScene {
     for (const stinger of World.getByTag('player-stinger')) {
       if (!stinger.active) continue;
       for (const wh of this.waspHiveSystem.hives) {
-        if (wh.hp <= 0 || dist(stinger.x, stinger.y, wh.x, wh.y) > 30) continue;
+        if (wh.hp <= 0 || dist(stinger.x, stinger.y, wh.x, wh.y) > 75) continue;
         stinger.destroy();
         this.waspHiveSystem.onHiveAttacked(this._gameTime, wh);
         if (wh.takeDamage(stinger.damage)) this.waspHiveSystem.onHiveDestroyed();
@@ -415,7 +498,7 @@ export default class GameScene {
     const now = this._gameTime;
     for (const wh of this.waspHiveSystem.hives) {
       if (wh.hp <= 0 || now - (wh._lastDashHit || 0) < 500) continue;
-      if (dist(this.player.x, this.player.y, wh.x, wh.y) <= 40) {
+      if (dist(this.player.x, this.player.y, wh.x, wh.y) <= 90) {
         wh._lastDashHit = now;
         this.waspHiveSystem.onHiveAttacked(now);
         if (wh.takeDamage(1)) this._endGame(true, true);
@@ -428,7 +511,7 @@ export default class GameScene {
     const now = this._gameTime;
     for (const b of World.getByTag('breakable')) {
       if (!b.active || now - (b._lastDashHit || 0) < 500) continue;
-      if (dist(this.player.x, this.player.y, b.x, b.y) <= 30) {
+      if (dist(this.player.x, this.player.y, b.x, b.y) <= 70) {
         b._lastDashHit = now;
         b.takeDamage(1);
       }
@@ -439,7 +522,7 @@ export default class GameScene {
     if (!this.player.alive) return;
     const now = this._gameTime;
     for (const wasp of World.getByTag('wasp')) {
-      if (!wasp.active || dist(this.player.x, this.player.y, wasp.x, wasp.y) > 24) continue;
+      if (!wasp.active || dist(this.player.x, this.player.y, wasp.x, wasp.y) > 60) continue;
 
       if (this.player.isDashing) {
         if (now - (wasp.lastDashedHit || 0) < 500) continue;
@@ -470,7 +553,7 @@ export default class GameScene {
     const now = this._gameTime;
     for (const wasp of World.getByTag('wasp')) {
       if (!wasp.active || wasp.isRetreating || now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
-      if (dist(wasp.x, wasp.y, hive.x, hive.y) > 50) continue;
+      if (dist(wasp.x, wasp.y, hive.x, hive.y) > 110) continue;
       wasp.lastHit = now;
       if (this.resources.getHoney() > 0) {
         SoundSynth.play('hive-hit');
@@ -489,13 +572,13 @@ export default class GameScene {
     for (const wasp of World.getByTag('wasp')) {
       if (!wasp.active || wasp.waspType !== 'hunter' || now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
       for (const worker of World.getByTag('worker')) {
-        if (!worker.active || !worker.alive || dist(wasp.x, wasp.y, worker.x, worker.y) > 20) continue;
+        if (!worker.active || !worker.alive || dist(wasp.x, wasp.y, worker.x, worker.y) > 50) continue;
         wasp.lastHit = now;
         if (worker._sap > 0) worker._sap = Math.max(0, worker._sap - WASP.SAP_STEAL);
         else worker.takeDamage(WASP.DAMAGE);
       }
       for (const soldier of World.getByTag('soldier')) {
-        if (!soldier.active || !soldier.alive || dist(wasp.x, wasp.y, soldier.x, soldier.y) > 30) continue;
+        if (!soldier.active || !soldier.alive || dist(wasp.x, wasp.y, soldier.x, soldier.y) > 65) continue;
         wasp.lastHit = now;
         soldier.takeDamage(WASP.DAMAGE);
       }
@@ -507,7 +590,7 @@ export default class GameScene {
     for (const wasp of World.getByTag('wasp')) {
       if (!wasp.active || wasp.waspType !== 'raider' || wasp.isRetreating || now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
       for (const tower of World.getByTag('guard-post')) {
-        if (!tower.active || tower.hp <= 0 || dist(wasp.x, wasp.y, tower.x, tower.y) > 32) continue;
+        if (!tower.active || tower.hp <= 0 || dist(wasp.x, wasp.y, tower.x, tower.y) > 70) continue;
         wasp.lastHit = now;
         tower.takeDamage(WASP.DAMAGE);
         wasp.retreat();
@@ -529,6 +612,7 @@ export default class GameScene {
       this.level++;
       this._xpIncrement = Math.floor(this._xpIncrement * XP.REQ_MULTIPLIER);
       this.reqXp = this.xpFloor + this._xpIncrement;
+      this.levelUpMenu.show(this.upgrades);
     }
   }
 
@@ -579,10 +663,11 @@ export default class GameScene {
 
   _placeTower(key, x, y) {
     const costs = { 'resin-trap': TOWER.RESIN_TRAP_COST, 'guard-post': TOWER.GUARD_POST_COST, 'poison-honey': TOWER.POISON_HONEY_COST };
-    if (!this.resources.spendHoney(costs[key])) return;
+    if (!this.resources.spendHoney(costs[key])) return false;
     if (key === 'resin-trap')   new ResinTrap(x, y);
     else if (key === 'guard-post')   new GuardPost(x, y);
     else if (key === 'poison-honey') new PoisonHoney(x, y);
+    return true;
   }
 
   _applyUpgrade(key) {
@@ -636,11 +721,178 @@ export default class GameScene {
     );
   }
 
+  _onPauseSelect(key) {
+    if (key === 'resume') {
+      // automatically handled by pauseMenu hiding
+    } else if (key === 'restart') {
+      import('./index.js').then(({ transition }) =>
+        import('./GameScene.js').then(({ default: GameScene }) =>
+          transition(GameScene, { playground: this._playground })
+        )
+      );
+    } else if (key === 'quit') {
+      import('./index.js').then(({ transition }) =>
+        import('./MenuScene.js').then(({ default: MenuScene }) =>
+          transition(MenuScene)
+        )
+      );
+    }
+  }
+
   _calculateScore() {
     return Math.floor(this.resources.getHoney() * 10 + this.waveManager.getWaveNumber() * 100);
   }
 
+  _onBuildSelect(key) {
+    if (key === 'recruit-worker')  { this._recruitWorker();  return; }
+    if (key === 'recruit-soldier') { this._recruitSoldier(); return; }
+    this._enterPlacement(key);
+  }
+
+  _enterPlacement(key) {
+    this._placementKey = key;
+  }
+
+  _exitPlacement() {
+    this._placementKey = null;
+  }
+
+  _initPlaygroundMenu() {
+    this._pgOptions = [
+      { label: 'Hunter Wasp', key: 'hunter' },
+      { label: 'Raider Wasp', key: 'raider' },
+      { label: 'Archer Wasp', key: 'archer' },
+      { label: 'Max Honey',   key: 'maxhoney' },
+    ];
+    this._pgIdx = 0;
+    this._pgLBWas = false;
+    this._pgRBWas = false;
+    this._pgXWas = false;
+  }
+
+  _updatePlaygroundMenu() {
+    const pad = navigator.getGamepads?.()[0];
+    const lb = pad?.buttons[4]?.pressed ?? false;
+    const rb = pad?.buttons[5]?.pressed ?? false;
+    const xb = pad?.buttons[2]?.pressed ?? false;
+
+    if (lb && !this._pgLBWas) this._pgIdx = (this._pgIdx - 1 + this._pgOptions.length) % this._pgOptions.length;
+    if (rb && !this._pgRBWas) this._pgIdx = (this._pgIdx + 1) % this._pgOptions.length;
+    this._pgLBWas = lb;
+    this._pgRBWas = rb;
+
+    if (Input.justDown(',')) this._pgIdx = (this._pgIdx - 1 + this._pgOptions.length) % this._pgOptions.length;
+    if (Input.justDown('.')) this._pgIdx = (this._pgIdx + 1) % this._pgOptions.length;
+
+    const activate = (xb && !this._pgXWas) || Input.justDown('x') || Input.justDown('X');
+    this._pgXWas = xb;
+    if (activate) this._spawnPlaygroundEntity(this._pgOptions[this._pgIdx].key);
+  }
+
+  _spawnPlaygroundEntity(key) {
+    if (key === 'maxhoney') {
+      this.resources.addHoney(this.resources.getHoneyStorage());
+      return;
+    }
+    const hives = this.waspHiveSystem.hives.filter(h => h.hp > 0);
+    let sx, sy;
+    if (hives.length) {
+      sx = hives[0].x + (Math.random() - 0.5) * 100;
+      sy = hives[0].y + (Math.random() - 0.5) * 100;
+    } else {
+      const edge = Math.floor(Math.random() * 4);
+      sx = edge === 0 ? 50 : edge === 1 ? WORLD.WIDTH - 50 : 50 + Math.random() * (WORLD.WIDTH - 100);
+      sy = edge === 2 ? 50 : edge === 3 ? WORLD.HEIGHT - 50 : 50 + Math.random() * (WORLD.HEIGHT - 100);
+    }
+    if (key === 'hunter') {
+      const w = new HunterWasp(sx, sy);
+      w.setTarget(this.player);
+    } else if (key === 'raider') {
+      new RaiderWasp(sx, sy);
+    } else if (key === 'archer') {
+      const w = new ArcherWasp(sx, sy);
+      w.setTarget(this.player);
+    }
+  }
+
+  _screenToWorld(sx, sy) {
+    const PPU = 0.25, SCREEN_W = 400, ANCHOR_Y = 150;
+    const sinP = Math.sin(this.camera.pitch ?? Math.PI / 6);
+    const camCos = Math.cos(this.camera.angle);
+    const camSin = Math.sin(this.camera.angle);
+    const lx = (ANCHOR_Y - sy) / (PPU * sinP);
+    const ly = (sx - SCREEN_W / 2) / PPU;
+    return {
+      x: this.camera.x + lx * camCos - ly * camSin,
+      y: this.camera.y + lx * camSin + ly * camCos,
+    };
+  }
+
+  _worldToScreen(wx, wy) {
+    const PPU = 0.25, SCREEN_W = 400, ANCHOR_Y = 150;
+    const sinP = Math.sin(this.camera.pitch ?? Math.PI / 6);
+    const camCos = Math.cos(this.camera.angle);
+    const camSin = Math.sin(this.camera.angle);
+    const dx = wx - this.camera.x;
+    const dy = wy - this.camera.y;
+    const lx = dx * camCos + dy * camSin;
+    const ly = -dx * camSin + dy * camCos;
+    const sx = ly * PPU + SCREEN_W / 2;
+    const sy = ANCHOR_Y - lx * PPU * sinP;
+    return { x: sx, y: sy };
+  }
+
+  renderOverlay(ctx) {
+    this.pauseMenu?.render(ctx);
+    this.buildMenu?.render(ctx);
+    this.levelUpMenu?.render(ctx);
+
+    if (this._placementKey && this.player?.alive) {
+      const pos = this._worldToScreen(this.player.x, this.player.y);
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#00ff00';
+      ctx.beginPath();
+      ctx.ellipse(pos.x, pos.y, 20, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText(`Place ${this._placementKey.replace('-', ' ')}`, pos.x, pos.y - 15);
+      ctx.font = '6px monospace';
+      ctx.fillText('[X] Place  [B] Cancel', pos.x, pos.y - 5);
+      ctx.restore();
+    }
+
+    if (this._playground && this._pgOptions) {
+      ctx.save();
+      const opt = this._pgOptions[this._pgIdx];
+      const panelY = 217;
+      ctx.fillStyle = 'rgba(0,0,0,0.78)';
+      ctx.fillRect(0, panelY, 400, 23);
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillStyle = '#ffd700';
+      ctx.fillText(`< ${opt.label} >`, 200, panelY + 9);
+      ctx.font = '7px monospace';
+      ctx.fillStyle = '#555';
+      ctx.fillText('LB/RB or ,/. scroll    X or x spawn', 200, panelY + 19);
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 6px monospace';
+      ctx.fillStyle = '#00ff88';
+      ctx.fillText('PLAYGROUND', 398, panelY + 7);
+      ctx.restore();
+    }
+
+  }
+
   getCamera() { return this.camera; }
 
-  destroy() { World.clear(); }
+  destroy() {
+    this._exitPlacement();
+    this.pauseMenu?.destroy();
+    this.buildMenu?.destroy();
+    this.levelUpMenu?.hide();
+    World.clear();
+  }
 }

@@ -5,6 +5,7 @@ import { HIVE } from '../constants.js';
 export default class Hive extends Entity {
   constructor(x, y) {
     super(x, y, 'hive');
+    this.spriteFrame = 1;
     this.spriteScale = 1.5;
     this.drag = 1;
     this.maxSpeed = 0;
