@@ -3,7 +3,6 @@ const SCREEN_H = 240;
 const PPU = 0.25;            // pixels per world unit — change to zoom
 const SPRITE_BASE = 120;     // world-unit footprint for scale=1 entity; size = SPRITE_BASE * PPU
 const ANCHOR_Y = 150;        // screen Y where camera origin (bee) sits
-const SKY_COLOR = '#87ceeb';
 const FLOOR_COLOR = '#3a5a1c';
 
 export default class IsometricRenderer {
@@ -24,11 +23,84 @@ export default class IsometricRenderer {
     const camCos = Math.cos(camera.angle);
     const camSin = Math.sin(camera.angle);
 
-    const skyH = Math.round(ANCHOR_Y - SCREEN_H * sinP);
-    ctx.fillStyle = SKY_COLOR;
-    ctx.fillRect(0, 0, SCREEN_W, Math.max(0, skyH));
+    // Background Void (Darker green outside playable map)
+    ctx.fillStyle = '#253f12';
+    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+
+    const sToW = (sx, sy) => {
+      const ly = (sx - SCREEN_W / 2) / PPU;
+      const lx = (ANCHOR_Y - sy) / (PPU * sinP);
+      const dx = lx * camCos - ly * camSin;
+      const dy = lx * camSin + ly * camCos;
+      return { x: camera.x + dx, y: camera.y + dy };
+    };
+
+    const wToS = (x, y) => {
+      const dx = x - camera.x;
+      const dy = y - camera.y;
+      const lx = dx * camCos + dy * camSin;
+      const ly = -dx * camSin + dy * camCos;
+      return { sx: SCREEN_W / 2 + ly * PPU, sy: ANCHOR_Y - lx * PPU * sinP };
+    };
+
+    const B = 2000;
+    const c1 = wToS(-B, -B);
+    const c2 = wToS(B, -B);
+    const c3 = wToS(B, B);
+    const c4 = wToS(-B, B);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(c1.sx, c1.sy);
+    ctx.lineTo(c2.sx, c2.sy);
+    ctx.lineTo(c3.sx, c3.sy);
+    ctx.lineTo(c4.sx, c4.sy);
+    ctx.closePath();
     ctx.fillStyle = FLOOR_COLOR;
-    ctx.fillRect(0, Math.max(0, skyH), SCREEN_W, SCREEN_H - Math.max(0, skyH));
+    ctx.fill();
+    ctx.clip();
+
+    const tl = sToW(0, 0);
+    const tr = sToW(SCREEN_W, 0);
+    const bl = sToW(0, SCREEN_H);
+    const br = sToW(SCREEN_W, SCREEN_H);
+    const minX = Math.min(tl.x, tr.x, bl.x, br.x);
+    const maxX = Math.max(tl.x, tr.x, bl.x, br.x);
+    const minY = Math.min(tl.y, tr.y, bl.y, br.y);
+    const maxY = Math.max(tl.y, tr.y, bl.y, br.y);
+
+    const GRID = 100;
+    const startX = Math.floor(minX / GRID) * GRID;
+    const startY = Math.floor(minY / GRID) * GRID;
+
+    ctx.beginPath();
+    for (let x = Math.max(-B, startX); x <= Math.min(B, maxX); x += GRID) {
+      const p1 = wToS(x, -B);
+      const p2 = wToS(x, B);
+      ctx.moveTo(Math.round(p1.sx), Math.round(p1.sy));
+      ctx.lineTo(Math.round(p2.sx), Math.round(p2.sy));
+    }
+    for (let y = Math.max(-B, startY); y <= Math.min(B, maxY); y += GRID) {
+      const p1 = wToS(-B, y);
+      const p2 = wToS(B, y);
+      ctx.moveTo(Math.round(p1.sx), Math.round(p1.sy));
+      ctx.lineTo(Math.round(p2.sx), Math.round(p2.sy));
+    }
+    ctx.strokeStyle = '#4b7524';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.moveTo(c1.sx, c1.sy);
+    ctx.lineTo(c2.sx, c2.sy);
+    ctx.lineTo(c3.sx, c3.sy);
+    ctx.lineTo(c4.sx, c4.sy);
+    ctx.closePath();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#1a2a0c';
+    ctx.stroke();
 
     const projected = [];
     for (const entity of entities) {
