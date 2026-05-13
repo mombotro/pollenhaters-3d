@@ -5,7 +5,8 @@ import { SPIDER } from '../constants.js';
 
 export default class Spider extends Entity {
   constructor(x, y) {
-    super(x, y, 'spider');
+    super(x, y, 'misc');
+    this.spriteFrame = 4;
     this.spriteScale = 0.5;
     this.drag = 0.015;
     this.maxSpeed = SPIDER.SPEED;

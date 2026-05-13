@@ -23,6 +23,7 @@ import WaspHiveSystem from '../systems/WaspHiveSystem.js';
 import HunterWasp from '../entities/HunterWasp.js';
 import RaiderWasp from '../entities/RaiderWasp.js';
 import Pickup from '../entities/Pickup.js';
+import EnvironmentFeature from '../entities/EnvironmentFeature.js';
 import Breakable from '../entities/Breakable.js';
 import WindSystem from '../systems/WindSystem.js';
 import Butterfly from '../entities/Butterfly.js';
@@ -189,6 +190,7 @@ export default class GameScene {
     if (_u.START_SOLDIER)     this._recruitSoldier(true);
     this._metaSoldierDmg = _u.SOLDIER_DMG_META ?? 0;
 
+    this._spawnEnvironment();
     this._spawnPassiveEntities();
   }
 
@@ -322,6 +324,7 @@ export default class GameScene {
     const spiderAnchors = [
       ...World.getByTag('flower').filter(f => f.active && f.lifecycle !== 'young'),
       ...World.getByTag('breakable').filter(b => b.active),
+      ...World.getByTag('environment').filter(e => e.active),
     ];
     for (const s of World.getByTag('spider')) {
       if (s.active) s.update(this._gameTime, dt, spiderAnchors, (f1, f2) => this._placeWeb(f1, f2));
@@ -635,7 +638,13 @@ export default class GameScene {
   _spawnPassiveEntities() {
     for (let i = 0; i < BUTTERFLY.COUNT; i++) new Butterfly(randInt(200, WORLD.WIDTH - 200), randInt(200, WORLD.HEIGHT - 200));
     for (let i = 0; i < SPIDER.COUNT; i++) new Spider(randInt(200, WORLD.WIDTH - 200), randInt(200, WORLD.HEIGHT - 200));
-    for (let i = 0; i < 3; i++) this._spawnBreakable();
+    for (let i = 0; i < 80; i++) this._spawnBreakable();
+  }
+
+  _spawnEnvironment() {
+    for (let i = 0; i < 400; i++) {
+      new EnvironmentFeature(randInt(100, WORLD.WIDTH - 100), randInt(100, WORLD.HEIGHT - 100));
+    }
   }
 
   _spawnBreakable() {

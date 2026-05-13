@@ -86,7 +86,9 @@ export default class Flower extends Entity {
   _enterOld(time) {
     this._state = STATE.OLD;
     this._oldAt = time;
-    this._updateSpriteFrame();
+    this.spriteKey = 'grass';
+    const frames = [0, 1, 4, 5];
+    this.spriteFrame = frames[Math.floor(Math.random() * frames.length)];
   }
 
   _enterDead() {

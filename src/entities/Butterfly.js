@@ -5,7 +5,8 @@ import { BUTTERFLY, FLOWER } from '../constants.js';
 
 export default class Butterfly extends Entity {
   constructor(x, y) {
-    super(x, y, 'butterfly');
+    super(x, y, 'misc');
+    this.spriteFrame = 5;
     this.spriteScale = 0.4;
     this.drag = 0.8;
     this.maxSpeed = BUTTERFLY.SPEED;

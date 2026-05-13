@@ -44,10 +44,10 @@ export const WAVE = {
 export const FLOWER = {
   POLLINATION_RADIUS: 150,
   SPAWN_DELAY: 6000,
-  INITIAL_COUNT: 20,
+  INITIAL_COUNT: 200,
   YOUNG_DURATION:  3000,   // ms in YOUNG state before sap is collectible
   OLD_DURATION:    5000,   // ms in OLD state before flower dies
-  RESPAWN_DELAY:  10000,   // ms after death before a new flower spawns elsewhere
+  RESPAWN_DELAY:   5000,   // ms after death before a new flower spawns elsewhere
   AROMATIC_RADIUS: 180,    // px — butterfly attraction radius for AROMATIC flowers
 };
 
@@ -165,7 +165,7 @@ export const WASP_HIVE = {
 export const BREAKABLE = {
   HP: 3,                 // health of the breakable object
   SPAWN_DELAY: 20000,    // ms between spawn attempts
-  MAX_COUNT: 10,         // maximum breakables on the map
+  MAX_COUNT: 200,         // maximum breakables on the map
 };
 
 export const PICKUP = {

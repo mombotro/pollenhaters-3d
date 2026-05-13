@@ -6,8 +6,8 @@ import Pickup from './Pickup.js';
 
 export default class Breakable extends Entity {
   constructor(x, y) {
-    super(x, y, 'misc');
-    this.spriteFrame = 2;
+    super(x, y, 'pickup');
+    this.spriteFrame = 4;
     this.spriteScale = 0.8;
     this.drag = 1;
     this.maxSpeed = 0;
@@ -27,6 +27,7 @@ export default class Breakable extends Entity {
 
   _break() {
     SoundSynth.play('break');
+    this.spriteFrame = 5;
     const type = Math.random() < 0.5 ? 'health' : 'xp';
     new Pickup(this.x, this.y, type);
     World.after(400, () => this.destroy());

@@ -12,6 +12,7 @@ export default class BootScene {
       { key: 'bee-sheet',   path: `${base}bee_sheet.png`,      fw: 48,  fh: 48  },
       { key: 'flower',      path: `${base}flowers-sheet.png`,  fw: 400, fh: 400 },
       { key: 'hive',        path: `${base}hives.png`,          fw: 400, fh: 400 },
+      { key: 'grass',       path: `${base}grass-sheet.png`,    fw: 400, fh: 400 },
       { key: 'pickup',      path: `${base}pickups.png`,        fw: 400, fh: 400 },
       { key: 'misc',        path: `${base}misc.png`,           fw: 400, fh: 400 },
       { key: 'wasp',        path: `${base}wasp.png`,           fw: 52,  fh: 52  },

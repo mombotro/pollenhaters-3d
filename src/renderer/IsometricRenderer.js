@@ -1,4 +1,5 @@
 import { WORLD } from '../constants.js';
+import World from '../engine/World.js';
 
 const SCREEN_W = 400;
 const SCREEN_H = 240;
@@ -104,6 +105,24 @@ export default class IsometricRenderer {
     ctx.lineWidth = 4;
     ctx.strokeStyle = '#1a2a0c';
     ctx.stroke();
+
+    // Draw Webs
+    const webs = World.getByTag('web');
+    if (webs.length > 0) {
+      ctx.save();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.beginPath();
+      for (const w of webs) {
+        if (!w.active) continue;
+        const p1 = wToS(w.x1, w.y1);
+        const p2 = wToS(w.x2, w.y2);
+        ctx.moveTo(p1.sx, p1.sy);
+        ctx.lineTo(p2.sx, p2.sy);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
 
     const projected = [];
     for (const entity of entities) {
