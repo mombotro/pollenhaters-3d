@@ -1,3 +1,5 @@
+import { WORLD } from '../constants.js';
+
 const SCREEN_W = 400;
 const SCREEN_H = 240;
 const PPU = 0.25;            // pixels per world unit — change to zoom
@@ -43,11 +45,12 @@ export default class IsometricRenderer {
       return { sx: SCREEN_W / 2 + ly * PPU, sy: ANCHOR_Y - lx * PPU * sinP };
     };
 
-    const B = 2000;
-    const c1 = wToS(-B, -B);
-    const c2 = wToS(B, -B);
-    const c3 = wToS(B, B);
-    const c4 = wToS(-B, B);
+    const W = WORLD.WIDTH;
+    const H = WORLD.HEIGHT;
+    const c1 = wToS(0, 0);
+    const c2 = wToS(W, 0);
+    const c3 = wToS(W, H);
+    const c4 = wToS(0, H);
 
     ctx.save();
     ctx.beginPath();
@@ -74,15 +77,15 @@ export default class IsometricRenderer {
     const startY = Math.floor(minY / GRID) * GRID;
 
     ctx.beginPath();
-    for (let x = Math.max(-B, startX); x <= Math.min(B, maxX); x += GRID) {
-      const p1 = wToS(x, -B);
-      const p2 = wToS(x, B);
+    for (let x = Math.max(0, startX); x <= Math.min(W, maxX); x += GRID) {
+      const p1 = wToS(x, 0);
+      const p2 = wToS(x, H);
       ctx.moveTo(Math.round(p1.sx), Math.round(p1.sy));
       ctx.lineTo(Math.round(p2.sx), Math.round(p2.sy));
     }
-    for (let y = Math.max(-B, startY); y <= Math.min(B, maxY); y += GRID) {
-      const p1 = wToS(-B, y);
-      const p2 = wToS(B, y);
+    for (let y = Math.max(0, startY); y <= Math.min(H, maxY); y += GRID) {
+      const p1 = wToS(0, y);
+      const p2 = wToS(W, y);
       ctx.moveTo(Math.round(p1.sx), Math.round(p1.sy));
       ctx.lineTo(Math.round(p2.sx), Math.round(p2.sy));
     }

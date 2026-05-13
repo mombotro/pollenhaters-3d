@@ -1,6 +1,6 @@
 export const WORLD = {
-  WIDTH: 2560,
-  HEIGHT: 1440,
+  WIDTH: 8000,
+  HEIGHT: 8000,
 };
 
 export const BEE = {
