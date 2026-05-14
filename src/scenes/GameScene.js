@@ -230,11 +230,14 @@ export default class GameScene {
 
     if (this._placementKey) {
       if (Input.justDown('x') || Input.justDown('X') || Input.gamepad.justDown(0) || Input.mouseJustDown(0)) {
-        if (this._placeTower(this._placementKey, this.player.x, this.player.y)) {
-          this._exitPlacement();
-        } else {
-          SoundSynth.play('hit'); // Error sound if cannot afford
-          this._exitPlacement();
+        const tooClose = dist(this.player.x, this.player.y, this.hiveX, this.hiveY) < 100;
+        if (!tooClose) {
+          if (this._placeTower(this._placementKey, this.player.x, this.player.y)) {
+            this._exitPlacement();
+          } else {
+            SoundSynth.play('hit');
+            this._exitPlacement();
+          }
         }
       } else if (Input.justDown('b') || Input.justDown('B') || Input.gamepad.justDown(1) || Input.mouseJustDown(2)) {
         this._exitPlacement();
@@ -728,7 +731,7 @@ export default class GameScene {
       'poison-honey': TOWER.POISON_HONEY_COST,
       'nectar-attractor': NECTAR_ATTRACTOR.COST,
     };
-    if (dist(x, y, this.hiveX, this.hiveY) < 50) return false;
+    if (dist(x, y, this.hiveX, this.hiveY) < 100) return false;
     if (!this.resources.spendHoney(costs[key])) return false;
     if (key === 'resin-trap')            new ResinTrap(x, y);
     else if (key === 'guard-post')       new GuardPost(x, y);
@@ -917,7 +920,7 @@ export default class GameScene {
 
     if (this._placementKey && this.player?.alive) {
       const pos = this._worldToScreen(this.player.x, this.player.y);
-      const invalid = dist(this.player.x, this.player.y, this.hiveX, this.hiveY) < 50;
+      const invalid = dist(this.player.x, this.player.y, this.hiveX, this.hiveY) < 100;
       ctx.save();
       ctx.globalAlpha = 0.5;
       ctx.fillStyle = invalid ? '#ff0000' : '#00ff00';
