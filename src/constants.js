@@ -172,7 +172,7 @@ export const BREAKABLE = {
 };
 
 export const NECTAR_ATTRACTOR = {
-  COST: 40,
+  COST: 80,
   NECTAR: 50,
   STEAL_AMOUNT: 5,
   STEAL_COOLDOWN: 3000,

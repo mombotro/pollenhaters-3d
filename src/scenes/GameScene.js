@@ -728,6 +728,7 @@ export default class GameScene {
       'poison-honey': TOWER.POISON_HONEY_COST,
       'nectar-attractor': NECTAR_ATTRACTOR.COST,
     };
+    if (dist(x, y, this.hiveX, this.hiveY) < 50) return false;
     if (!this.resources.spendHoney(costs[key])) return false;
     if (key === 'resin-trap')            new ResinTrap(x, y);
     else if (key === 'guard-post')       new GuardPost(x, y);
@@ -916,9 +917,10 @@ export default class GameScene {
 
     if (this._placementKey && this.player?.alive) {
       const pos = this._worldToScreen(this.player.x, this.player.y);
+      const invalid = dist(this.player.x, this.player.y, this.hiveX, this.hiveY) < 50;
       ctx.save();
       ctx.globalAlpha = 0.5;
-      ctx.fillStyle = '#00ff00';
+      ctx.fillStyle = invalid ? '#ff0000' : '#00ff00';
       ctx.beginPath();
       ctx.ellipse(pos.x, pos.y, 20, 10, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -927,7 +929,7 @@ export default class GameScene {
       ctx.font = 'bold 8px monospace';
       ctx.fillText(`Place ${this._placementKey.replace('-', ' ')}`, pos.x, pos.y - 15);
       ctx.font = '6px monospace';
-      ctx.fillText('[A] Place  [B] Cancel', pos.x, pos.y - 5);
+      ctx.fillText(invalid ? 'Too close to hive!' : '[A] Place  [B] Cancel', pos.x, pos.y - 5);
       ctx.restore();
     }
 

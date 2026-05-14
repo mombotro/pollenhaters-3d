@@ -23,7 +23,7 @@ export default class Butterfly extends Entity {
 
     let steered = false;
 
-    if (player?.alive && dist(this.x, this.y, player.x, player.y) < BUTTERFLY.FLEE_RADIUS) {
+    if (player?.alive && !this._claimedAttractor && dist(this.x, this.y, player.x, player.y) < BUTTERFLY.FLEE_RADIUS) {
       this._angle    = angleBetween(player.x, player.y, this.x, this.y);
       this._nextTurn = time + 1200;
       steered = true;
