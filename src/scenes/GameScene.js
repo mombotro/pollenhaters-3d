@@ -229,7 +229,7 @@ export default class GameScene {
     }
 
     if (this._placementKey) {
-      if (Input.justDown('x') || Input.justDown('X') || Input.gamepad.justDown(0)) {
+      if (Input.justDown('x') || Input.justDown('X') || Input.gamepad.justDown(0) || Input.mouseJustDown(0)) {
         if (this._placeTower(this._placementKey, this.player.x, this.player.y)) {
           this._exitPlacement();
         } else {
