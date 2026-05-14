@@ -9,10 +9,11 @@ export default class GameOverScene {
     this.timeSurvived = data.timeSurvived ?? 0;
     this.wonByDestruction = data.wonByDestruction ?? false;
 
-    const earned = this.wonByDestruction
+    this.playground = data.playground ?? false;
+    const earned = (!this.playground && this.wonByDestruction)
       ? 300 + Math.round(200 * Math.max(0, 1 - this.timeSurvived / 600)) + Math.floor(this.score / 10)
-      : Math.floor(this.score / 10);
-    MetaSave.addJelly(earned);
+      : this.playground ? 0 : Math.floor(this.score / 10);
+    if (!this.playground) MetaSave.addJelly(earned);
     this.earned = earned;
 
     const s = MetaSave.load();
@@ -48,8 +49,10 @@ export default class GameOverScene {
     ctx.font = '10px monospace';
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`Score: ${this.score}   Waves: ${this.waves}   Time: ${mins}:${secs}`, W / 2, 90);
-    ctx.fillStyle = '#ffcc00';
-    ctx.fillText(`+${this.earned} Royal Jelly`, W / 2, 115);
+    if (!this.playground) {
+      ctx.fillStyle = '#ffcc00';
+      ctx.fillText(`+${this.earned} Royal Jelly`, W / 2, 115);
+    }
     ctx.fillStyle = '#888888';
     ctx.fillText(`High score: ${this.highScore}`, W / 2, 135);
 

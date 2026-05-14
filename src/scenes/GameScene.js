@@ -786,7 +786,7 @@ export default class GameScene {
     const timeSurvived = Math.floor(this._playTime / 1000);
     import('./index.js').then(({ transition }) =>
       import('./GameOverScene.js').then(({ default: S }) =>
-        transition(S, { won, score, waves, timeSurvived, wonByDestruction })
+        transition(S, { won, score, waves, timeSurvived, wonByDestruction, playground: this._playground })
       )
     );
   }

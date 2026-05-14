@@ -90,6 +90,17 @@ export default class MenuScene {
     if (Input.justDown('Enter') || Input.justDown(' ')) {
       this._startGame(this._selIdx);
     }
+
+    if (Input.mouseJustDown(0)) {
+      const rect = this._canvas.getBoundingClientRect();
+      const scaleY = this._canvas.height / rect.height;
+      const cy = (Input.mouseClientY() - rect.top) * scaleY;
+      let idx = -1;
+      if (cy > 115 && cy < 150) idx = 0;
+      else if (cy > 150 && cy < 185) idx = 1;
+      else if (cy > 185 && cy < 220) idx = 2;
+      if (idx >= 0) this._startGame(idx);
+    }
   }
 
   _startGame(idx) {
