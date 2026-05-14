@@ -141,15 +141,13 @@ export default class PlayerBee extends Entity {
     if (Math.abs(gpy) > 0.15) sdy += gpy;
 
     if (sdx !== 0 || sdy !== 0) {
-      // Normalize in screen space: weight vertical by sinP (0.5) so all
-      // directions have equal visual speed despite isometric compression
-      const ISO_SIN_P = 0.5;
-      const slen = Math.hypot(sdx, sdy * ISO_SIN_P);
-      const wx = (sdx / slen) - (sdy / slen);
-      const wy = (sdx / slen) + (sdy / slen);
+      const slen = Math.hypot(sdx, sdy);
+      const nx = sdx / slen;
+      const ny = sdy / slen;
+      const wx = nx - ny;
+      const wy = nx + ny;
       const targetVx = wx * this._speed;
       const targetVy = wy * this._speed;
-      // Lerp toward target velocity for smooth acceleration
       const accelRate = Math.min(12 * dt, 1);
       this.vx += (targetVx - this.vx) * accelRate;
       this.vy += (targetVy - this.vy) * accelRate;
