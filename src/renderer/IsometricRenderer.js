@@ -16,8 +16,8 @@ export default class IsometricRenderer {
     canvas.width = SCREEN_W;
     canvas.height = SCREEN_H;
     canvas.style.imageRendering = 'pixelated';
-    canvas.style.width = '100vmin';
-    canvas.style.height = `${100 * (SCREEN_H / SCREEN_W)}vmin`;
+    canvas.style.width  = `min(100vw, calc(100vh * ${SCREEN_W} / ${SCREEN_H}))`;
+    canvas.style.height = `min(100vh, calc(100vw * ${SCREEN_H} / ${SCREEN_W}))`;
   }
 
   render(camera, entities, sprites) {

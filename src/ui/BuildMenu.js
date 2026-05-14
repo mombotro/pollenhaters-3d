@@ -73,8 +73,11 @@ export default class BuildMenu {
 
     const aDown = pad.buttons[0]?.pressed ?? false;
     if (aDown && !this._gpAWas) {
-      this._onSelect(ITEMS[this._gpIdx].key);
-      this.hide();
+      const item = ITEMS[this._gpIdx];
+      if (this._resources.getHoney() >= item.cost) {
+        this._onSelect(item.key);
+        this.hide();
+      }
     }
     this._gpAWas = aDown;
   }
@@ -103,12 +106,20 @@ export default class BuildMenu {
       const canAfford = honey >= item.cost;
       const active = i === this._hovered || i === this._gpIdx;
 
-      if (active) {
+      if (active && canAfford) {
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
         ctx.fillRect(r.x, r.y, r.w, r.h);
       }
-      ctx.fillStyle = !canAfford ? '#555' : active ? '#fff' : '#ffd700';
-      ctx.fillText(`${item.label}  ${item.cost}h`, r.x + 5, r.y + 14);
+
+      if (!canAfford) {
+        ctx.fillStyle = '#777';
+        ctx.fillText(item.label, r.x + 5, r.y + 14);
+        ctx.fillStyle = '#c04040';
+        ctx.fillText(`  ${item.cost}h`, r.x + 5 + ctx.measureText(item.label).width, r.y + 14);
+      } else {
+        ctx.fillStyle = active ? '#fff' : '#ffd700';
+        ctx.fillText(`${item.label}  ${item.cost}h`, r.x + 5, r.y + 14);
+      }
     }
     ctx.restore();
   }
@@ -142,8 +153,10 @@ export default class BuildMenu {
     for (let i = 0; i < ITEMS.length; i++) {
       const r = this._rect(i);
       if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
-        this._onSelect(ITEMS[i].key);
-        this.hide();
+        if (this._resources.getHoney() >= ITEMS[i].cost) {
+          this._onSelect(ITEMS[i].key);
+          this.hide();
+        }
         return;
       }
     }
