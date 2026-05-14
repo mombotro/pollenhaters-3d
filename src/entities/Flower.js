@@ -23,7 +23,11 @@ export default class Flower extends Entity {
     this.spriteScale     = initialBloom ? 1.0 : 0.5;
     this._updateSpriteFrame();
 
-    if (initialBloom) this._enterMature();
+    if (initialBloom) {
+      this._enterMature();
+      // Stagger so initial flowers don't all die simultaneously
+      this._matureAt = -(Math.random() * this._typeDef.lifespan * 0.75);
+    }
 
     World.add(this, 'flower');
   }

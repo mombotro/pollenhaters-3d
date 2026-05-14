@@ -34,7 +34,7 @@ export default class Spider extends Entity {
         for (const a of anchors) {
           if (a === this._target || !a.active) continue;
           const dd = dist(this._target.x, this._target.y, a.x, a.y);
-          if (dd < 400 && dd < f2Dist) { f2 = a; f2Dist = dd; }
+          if (dd < 700 && dd < f2Dist) { f2 = a; f2Dist = dd; }
         }
         if (f2) onPlaceWeb(this._target, f2);
         this._dwelling = false;

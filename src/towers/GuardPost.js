@@ -6,7 +6,7 @@ import GuardBee from '../entities/GuardBee.js';
 export default class GuardPost extends Entity {
   constructor(x, y) {
     super(x, y, 'misc');
-    this.spriteScale = 0.1;
+    this.spriteScale = 0.7;
     this.spriteFrame = 0;
     this.drag = 1;
     this.maxSpeed = 0;

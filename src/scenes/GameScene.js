@@ -7,7 +7,7 @@ import LevelUpMenu from '../ui/LevelUpMenu.js';
 import PauseMenu from '../ui/PauseMenu.js';
 import {
   WORLD, BEE, HIVE, WASP, WAVE, FLOWER, TIMER, WORKER, TOWER, XP,
-  BUTTERFLY, SPIDER, WEB, BREAKABLE, SOLDIER, PICKUP, pickFlowerType,
+  BUTTERFLY, SPIDER, WEB, BREAKABLE, SOLDIER, PICKUP, NECTAR_ATTRACTOR, pickFlowerType,
 } from '../constants.js';
 import MetaSave from '../systems/MetaSave.js';
 import Flower from '../entities/Flower.js';
@@ -32,7 +32,10 @@ import SoldierBee from '../entities/SoldierBee.js';
 import GuardPost from '../towers/GuardPost.js';
 import ResinTrap from '../towers/ResinTrap.js';
 import PoisonHoney from '../towers/PoisonHoney.js';
+import NectarAttractor from '../towers/NectarAttractor.js';
 import ArcherWasp from '../entities/ArcherWasp.js';
+import WebTrap from '../entities/WebTrap.js';
+import * as Particles from '../systems/ParticleSystem.js';
 import SoundSynth from '../systems/SoundSynth.js';
 import { dist, randInt } from '../utils/math.js';
 
@@ -107,7 +110,7 @@ export default class GameScene {
     World.addSystem('fx', { burst: () => {} });
     World.addSystem('game', {
       collectXp: (val) => this._collectXp(val),
-      isPlacing: () => !!this._placementKey
+      isPlacing: () => !!this._placementKey || !!this._placementJustDone
     });
 
     this._placementKey = null;
@@ -196,6 +199,7 @@ export default class GameScene {
 
   update(dt, time) {
     if (this._ended) return;
+    this._placementJustDone = false;
 
     if (Input.justDown('Escape') || Input.gamepad.justDown(9)) {
       if (this.buildMenu?.visible) {
@@ -225,7 +229,7 @@ export default class GameScene {
     }
 
     if (this._placementKey) {
-      if (Input.justDown('x') || Input.justDown('X') || Input.gamepad.justDown(2)) {
+      if (Input.justDown('x') || Input.justDown('X') || Input.gamepad.justDown(0)) {
         if (this._placeTower(this._placementKey, this.player.x, this.player.y)) {
           this._exitPlacement();
         } else {
@@ -377,8 +381,31 @@ export default class GameScene {
       this._updatePlaygroundMenu();
     }
     this.waspHiveSystem.update(this._gameTime);
+    this._updateParticles(dt);
 
     if (this.hive && this.hive.hp <= 0) this._endGame(false);
+  }
+
+  _updateParticles(dt) {
+    Particles.update(dt);
+    const now = this._gameTime;
+    const RATE = 250; // ms between emissions per entity
+
+    // All wasps carrying honey → yellow sparkles
+    for (const wasp of World.getByTag('wasp')) {
+      if (!wasp.active || !wasp.honeyCarried) continue;
+      if (now - (wasp._lastParticle ?? 0) < RATE) continue;
+      wasp._lastParticle = now;
+      Particles.emit(wasp.x, wasp.y, '#ffd700', 2, 25);
+    }
+
+    // Player carrying sap → yellow sparkles
+    if (this.player.alive && this.resources.getSapCarried('player') > 0) {
+      if (now - (this._playerSapParticle ?? 0) >= RATE) {
+        this._playerSapParticle = now;
+        Particles.emit(this.player.x, this.player.y, '#ffe066', 2, 20);
+      }
+    }
   }
 
   _checkPlayerFlowerOverlap() {
@@ -525,7 +552,7 @@ export default class GameScene {
     if (!this.player.alive) return;
     const now = this._gameTime;
     for (const wasp of World.getByTag('wasp')) {
-      if (!wasp.active || dist(this.player.x, this.player.y, wasp.x, wasp.y) > 60) continue;
+      if (!wasp.active || dist(this.player.x, this.player.y, wasp.x, wasp.y) > 90) continue;
 
       if (this.player.isDashing) {
         if (now - (wasp.lastDashedHit || 0) < 500) continue;
@@ -537,11 +564,10 @@ export default class GameScene {
         continue;
       }
 
-      if (wasp.waspType !== 'hunter') continue;
       if (now - wasp.lastHit < WASP.HIT_COOLDOWN) continue;
       wasp.lastHit = now;
       const sap = this.resources.getSapCarried('player');
-      if (sap > 0) {
+      if (sap > 0 && wasp.waspType === 'hunter') {
         this.resources.stealSap('player', Math.max(1, WASP.SAP_STEAL - this.player.armor));
         this.waspHiveSystem.onHoneyStolen(Math.max(1, WASP.SAP_STEAL - this.player.armor));
       } else {
@@ -598,6 +624,15 @@ export default class GameScene {
         tower.takeDamage(WASP.DAMAGE);
         wasp.retreat();
       }
+      for (const attractor of World.getByTag('nectar-attractor')) {
+        if (!attractor.active || dist(wasp.x, wasp.y, attractor.x, attractor.y) > 70) continue;
+        const stolen = attractor.stealNectar(NECTAR_ATTRACTOR.STEAL_AMOUNT, now);
+        if (stolen > 0) {
+          wasp.honeyCarried = (wasp.honeyCarried ?? 0) + stolen;
+          wasp.lastHit = now;
+          wasp.retreat?.();
+        }
+      }
     }
   }
 
@@ -624,9 +659,26 @@ export default class GameScene {
     const f = new Flower(x, y, type, initialBloom);
     f.onDead = () => {
       World.after(FLOWER.RESPAWN_DELAY, () => {
-        if (!this._ended) this._spawnFlower(randInt(100, WORLD.WIDTH - 100), randInt(100, WORLD.HEIGHT - 100));
+        if (!this._ended) {
+          const pos = this._biasedFlowerPos();
+          this._spawnFlower(pos.x, pos.y);
+        }
       });
     };
+  }
+
+  _biasedFlowerPos() {
+    const butterflies = World.getByTag('butterfly').filter(b => b.active);
+    if (butterflies.length > 0 && Math.random() < 0.7) {
+      const b = butterflies[Math.floor(Math.random() * butterflies.length)];
+      const r = 80 + Math.random() * 160;
+      const a = Math.random() * Math.PI * 2;
+      return {
+        x: Math.max(100, Math.min(WORLD.WIDTH - 100,  b.x + Math.cos(a) * r)),
+        y: Math.max(100, Math.min(WORLD.HEIGHT - 100, b.y + Math.sin(a) * r)),
+      };
+    }
+    return { x: randInt(100, WORLD.WIDTH - 100), y: randInt(100, WORLD.HEIGHT - 100) };
   }
 
   _spawnInitialFlowers() {
@@ -638,11 +690,11 @@ export default class GameScene {
   _spawnPassiveEntities() {
     for (let i = 0; i < BUTTERFLY.COUNT; i++) new Butterfly(randInt(200, WORLD.WIDTH - 200), randInt(200, WORLD.HEIGHT - 200));
     for (let i = 0; i < SPIDER.COUNT; i++) new Spider(randInt(200, WORLD.WIDTH - 200), randInt(200, WORLD.HEIGHT - 200));
-    for (let i = 0; i < 80; i++) this._spawnBreakable();
+    for (let i = 0; i < 15; i++) this._spawnBreakable();
   }
 
   _spawnEnvironment() {
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 800; i++) {
       new EnvironmentFeature(randInt(100, WORLD.WIDTH - 100), randInt(100, WORLD.HEIGHT - 100));
     }
   }
@@ -653,9 +705,8 @@ export default class GameScene {
   }
 
   _placeWeb(f1, f2) {
-    // WebTrap is not an Entity — import inline to avoid circular dep
     if (World.getByTag('web').filter(w => w.active).length >= WEB.MAX_COUNT) return;
-    import('../entities/WebTrap.js').then(({ default: WebTrap }) => new WebTrap(f1, f2));
+    new WebTrap(f1, f2);
   }
 
   _recruitWorker() {
@@ -671,11 +722,17 @@ export default class GameScene {
   }
 
   _placeTower(key, x, y) {
-    const costs = { 'resin-trap': TOWER.RESIN_TRAP_COST, 'guard-post': TOWER.GUARD_POST_COST, 'poison-honey': TOWER.POISON_HONEY_COST };
+    const costs = {
+      'resin-trap': TOWER.RESIN_TRAP_COST,
+      'guard-post': TOWER.GUARD_POST_COST,
+      'poison-honey': TOWER.POISON_HONEY_COST,
+      'nectar-attractor': NECTAR_ATTRACTOR.COST,
+    };
     if (!this.resources.spendHoney(costs[key])) return false;
-    if (key === 'resin-trap')   new ResinTrap(x, y);
-    else if (key === 'guard-post')   new GuardPost(x, y);
-    else if (key === 'poison-honey') new PoisonHoney(x, y);
+    if (key === 'resin-trap')            new ResinTrap(x, y);
+    else if (key === 'guard-post')       new GuardPost(x, y);
+    else if (key === 'poison-honey')     new PoisonHoney(x, y);
+    else if (key === 'nectar-attractor') new NectarAttractor(x, y);
     return true;
   }
 
@@ -763,7 +820,8 @@ export default class GameScene {
   }
 
   _exitPlacement() {
-    this._placementKey = null;
+    this._placementKey     = null;
+    this._placementJustDone = true;
   }
 
   _initPlaygroundMenu() {
@@ -869,7 +927,7 @@ export default class GameScene {
       ctx.font = 'bold 8px monospace';
       ctx.fillText(`Place ${this._placementKey.replace('-', ' ')}`, pos.x, pos.y - 15);
       ctx.font = '6px monospace';
-      ctx.fillText('[X] Place  [B] Cancel', pos.x, pos.y - 5);
+      ctx.fillText('[A] Place  [B] Cancel', pos.x, pos.y - 5);
       ctx.restore();
     }
 
@@ -902,6 +960,7 @@ export default class GameScene {
     this.pauseMenu?.destroy();
     this.buildMenu?.destroy();
     this.levelUpMenu?.hide();
+    Particles.clear();
     World.clear();
   }
 }

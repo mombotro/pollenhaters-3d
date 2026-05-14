@@ -16,7 +16,7 @@ export default class Breakable extends Entity {
   }
 
   takeDamage(amount) {
-    if (!this.active) return false;
+    if (!this.active || this.hp <= 0) return false;
     this.hp -= amount;
     World.getSystem('fx')?.burst(this.x, this.y, 0x6b3a1f, this.hp <= 0 ? 8 : 4);
     this.setTint(0xffffff);
@@ -31,6 +31,5 @@ export default class Breakable extends Entity {
     const type = Math.random() < 0.5 ? 'health' : 'xp';
     new Pickup(this.x, this.y, type);
     World.after(400, () => this.destroy());
-    this.active = false;
   }
 }

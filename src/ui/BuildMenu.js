@@ -1,12 +1,13 @@
 import Input from '../engine/Input.js';
-import { TOWER, WORKER, SOLDIER } from '../constants.js';
+import { TOWER, WORKER, SOLDIER, NECTAR_ATTRACTOR } from '../constants.js';
 
 const ITEMS = [
-  { key: 'resin-trap',      label: 'Resin Trap',     cost: TOWER.RESIN_TRAP_COST   },
-  { key: 'guard-post',      label: 'Guard Post',      cost: TOWER.GUARD_POST_COST   },
-  { key: 'poison-honey',    label: 'Poison Honey',    cost: TOWER.POISON_HONEY_COST },
-  { key: 'recruit-worker',  label: 'Recruit Worker',  cost: WORKER.COST             },
-  { key: 'recruit-soldier', label: 'Recruit Soldier', cost: SOLDIER.COST            },
+  { key: 'resin-trap',        label: 'Resin Trap',       cost: TOWER.RESIN_TRAP_COST      },
+  { key: 'guard-post',        label: 'Guard Post',        cost: TOWER.GUARD_POST_COST      },
+  { key: 'poison-honey',      label: 'Poison Honey',      cost: TOWER.POISON_HONEY_COST    },
+  { key: 'nectar-attractor',  label: 'Nectar Attractor',  cost: NECTAR_ATTRACTOR.COST      },
+  { key: 'recruit-worker',    label: 'Recruit Worker',    cost: WORKER.COST                },
+  { key: 'recruit-soldier',   label: 'Recruit Soldier',   cost: SOLDIER.COST               },
 ];
 
 const MENU_W = 170;

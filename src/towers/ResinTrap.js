@@ -6,7 +6,7 @@ import { TOWER } from '../constants.js';
 export default class ResinTrap extends Entity {
   constructor(x, y) {
     super(x, y, 'misc');
-    this.spriteScale = 0.1;
+    this.spriteScale = 0.7;
     this.spriteFrame = 8;
     this.drag = 1;
     this.maxSpeed = 0;

@@ -10,10 +10,12 @@ export default class Pickup extends Entity {
     this.spriteScale = 0.5;
     this.type = type;
     this.spriteFrame = { xp: 0, honey: 1, health: 2 }[type] ?? 0;
-    this.vx = randInt(-10, 10);
-    this.vy = randInt(-10, 10);
-    this.drag = 0.03;
-    this.maxSpeed = 20;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 40 + Math.random() * 60;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.drag = 0.04;
+    this.maxSpeed = 100;
     World.add(this, 'pickup');
   }
 

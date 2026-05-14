@@ -27,6 +27,7 @@ function loop(timestamp) {
 
   if (camera) {
     const allEntities = [
+      ...World.getByTag('environment'),
       ...World.getByTag('hive'),
       ...World.getByTag('waspHive'),
       ...World.getByTag('flower'),

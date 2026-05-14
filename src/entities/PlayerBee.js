@@ -23,9 +23,10 @@ export default class PlayerBee extends Entity {
     this._stingerSpeed = BEE.STINGER_SPEED;
     this.armor = 0;
     this.isDashing = false;
+    this._isWindingUp = false;
+    this._windupEndTime = 0;
     this.dashEndTime = 0;
     this.lastDashTime = 0;
-    this._dashTargetAngle = null;
     this._preDashAngle = 0;
     this._preDashDrag = this.drag;
     this._dashRotTarget = null;
@@ -59,11 +60,21 @@ export default class PlayerBee extends Entity {
     // Right-click: aim stingers toward mouse
     this._updateAim();
 
-    if (this.isDashing) {
+    if (this._isWindingUp) {
+      this._dashRotTarget = this._preDashAngle + Math.PI;
+      if (time >= this._windupEndTime) {
+        this._isWindingUp = false;
+        this.isDashing = true;
+        this.dashEndTime = time + BEE.DASH_DURATION;
+        this.drag = 1;
+        const dashSpeed = this._speed * BEE.DASH_SPEED_MULTIPLIER;
+        this.vx = Math.cos(this._preDashAngle) * dashSpeed;
+        this.vy = Math.sin(this._preDashAngle) * dashSpeed;
+      }
+    } else if (this.isDashing) {
       const elapsed = BEE.DASH_DURATION - (this.dashEndTime - time);
       const progress = Math.min(elapsed / BEE.DASH_DURATION, 1);
-      // first half: turn stinger-forward; second half: turn back
-      this._dashRotTarget = progress < 0.5
+      this._dashRotTarget = progress < 0.85
         ? this._preDashAngle + Math.PI
         : this._preDashAngle;
       if (time >= this.dashEndTime) {
@@ -75,24 +86,23 @@ export default class PlayerBee extends Entity {
       const spacePush = Input.justDown(' ');
       const gpA = Input.gamepad.justDown(0);
       const canDash = !World.getSystem('game')?.isPlacing();
-      
       if ((spacePush || gpA) && canDash && time - this.lastDashTime >= BEE.DASH_COOLDOWN) {
-        this.isDashing = true;
-        this.dashEndTime = time + BEE.DASH_DURATION;
+        this._isWindingUp = true;
+        this._windupEndTime = time + BEE.DASH_WINDUP;
         this.lastDashTime = time;
         this._preDashAngle = this._targetAngle;
+        this.angle = this._preDashAngle + Math.PI; // instant flip stinger-forward
         this._dashRotTarget = this._preDashAngle + Math.PI;
         this._preDashDrag = this.drag;
-        this.drag = 1; // no decay during dash
-        const dashSpeed = this._speed * BEE.DASH_SPEED_MULTIPLIER;
-        this.vx = Math.cos(this._preDashAngle) * dashSpeed;
-        this.vy = Math.sin(this._preDashAngle) * dashSpeed;
+        this.drag = 0.05;
+        this.vx = -Math.cos(this._preDashAngle) * BEE.DASH_WINDUP_SPEED;
+        this.vy = -Math.sin(this._preDashAngle) * BEE.DASH_WINDUP_SPEED;
       }
     }
 
     this._readGamepad();
 
-    if (!this.isDashing) {
+    if (!this.isDashing && !this._isWindingUp) {
       this.maxSpeed = this._speed;
       this._move(dt);
     } else {

@@ -1,5 +1,6 @@
 import { WORLD } from '../constants.js';
 import World from '../engine/World.js';
+import * as Particles from '../systems/ParticleSystem.js';
 
 const SCREEN_W = 400;
 const SCREEN_H = 240;
@@ -111,7 +112,7 @@ export default class IsometricRenderer {
     if (webs.length > 0) {
       ctx.save();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.strokeStyle = 'rgba(220, 220, 255, 0.75)';
       ctx.beginPath();
       for (const w of webs) {
         if (!w.active) continue;
@@ -144,8 +145,13 @@ export default class IsometricRenderer {
       projected.push({ entity, sx, sy, lx, size });
     }
 
-    // Painter's: largest lx (furthest forward / deepest into scene) drawn first
-    projected.sort((a, b) => b.lx - a.lx);
+    // Layer 0 (ground decor) always behind layer 1 (gameplay entities); within each layer: painter's sort
+    projected.sort((a, b) => {
+      const la = a.entity.renderLayer ?? 1;
+      const lb = b.entity.renderLayer ?? 1;
+      if (la !== lb) return la - lb;
+      return b.lx - a.lx;
+    });
 
     for (const { entity, sx, sy, size } of projected) {
       const groundFrac = entity.spriteGroundFrac ?? 0.6;
@@ -195,5 +201,7 @@ export default class IsometricRenderer {
         }
       }
     }
+
+    Particles.render(ctx, wToS);
   }
 }

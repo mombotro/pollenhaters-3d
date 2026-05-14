@@ -13,6 +13,8 @@ export const BEE = {
   STINGER_RANGE: 200,
   RESPAWN_COST: 20,
   DASH_SPEED_MULTIPLIER: 5,
+  DASH_WINDUP: 100,
+  DASH_WINDUP_SPEED: 180,
   DASH_DURATION: 200,
   DASH_COOLDOWN: 2000,
 };
@@ -114,19 +116,20 @@ export const BUTTERFLY = {
   DIRECTION_CHANGE: 3000, // ms between random direction changes
   BOOST_RADIUS: 80,      // radius within which butterfly boosts nearby flowers
   POLLINATE_RADIUS: 50,  // radius for auto-pollination (was 26)
+  ATTRACTOR_RADIUS: 700, // radius within which butterflies seek NectarAttractor
 };
 
 export const SPIDER = {
   SPEED: 45,
-  COUNT: 3,              // spawned at run start
-  WEB_PLACE_TIME: 5000,  // ms spider must dwell near a flower before placing a web
+  COUNT: 6,
+  WEB_PLACE_TIME: 2000,
 };
 
 export const WEB = {
-  RADIUS: 28,            // distance in px at which web catches an entity
-  BREAK_TIME: 3000,      // ms of continuous contact before web snaps
-  MIN_DISTANCE: 80,      // spiders won't place a new web closer than this to an existing one
-  MAX_COUNT: 20,         // max webs on the map at once
+  RADIUS: 28,
+  BREAK_TIME: 3000,
+  MIN_DISTANCE: 80,
+  MAX_COUNT: 50,
 };
 
 export const WIND = {
@@ -163,9 +166,16 @@ export const WASP_HIVE = {
 };
 
 export const BREAKABLE = {
-  HP: 3,                 // health of the breakable object
-  SPAWN_DELAY: 20000,    // ms between spawn attempts
-  MAX_COUNT: 200,         // maximum breakables on the map
+  HP: 3,
+  SPAWN_DELAY: 60000,
+  MAX_COUNT: 4,
+};
+
+export const NECTAR_ATTRACTOR = {
+  COST: 40,
+  NECTAR: 50,
+  STEAL_AMOUNT: 5,
+  STEAL_COOLDOWN: 3000,
 };
 
 export const PICKUP = {
