@@ -10,6 +10,9 @@ export default class MenuScene {
     this._canvas = document.getElementById('game');
     this._ctx = this._canvas.getContext('2d');
 
+    this._splash = new Image();
+    this._splash.src = `${import.meta.env.BASE_URL}splash-small.png`;
+
     const getIdx = (e) => {
       const rect = this._canvas.getBoundingClientRect();
       const scaleY = this._canvas.height / rect.height;
@@ -38,14 +41,13 @@ export default class MenuScene {
     ctx.fillStyle = '#0a1a00';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 22px monospace';
-    ctx.fillStyle = '#ffd700';
-    ctx.fillText('POLLEN HATERS 3D', W / 2, 55);
+    if (this._splash?.complete && this._splash.naturalWidth > 0) {
+      const ih = 108;
+      const iw = Math.round(ih * this._splash.naturalWidth / this._splash.naturalHeight);
+      ctx.drawImage(this._splash, Math.round((W - iw) / 2), 6, iw, ih);
+    }
 
-    ctx.font = '9px monospace';
-    ctx.fillStyle = '#aaaaaa';
-    ctx.fillText('Protect the hive. Survive.', W / 2, 78);
+    ctx.textAlign = 'center';
 
     const items = ['[ START ]', '[ UPGRADES ]', '[ PLAYGROUND ]'];
     items.forEach((label, i) => {
