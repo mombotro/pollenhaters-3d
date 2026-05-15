@@ -9,7 +9,7 @@ export default class Butterfly extends Entity {
     this.spriteFrame = 5;
     this.spriteScale = 0.4;
     this.drag = 0.8;
-    this.maxSpeed = BUTTERFLY.SPEED;
+    this.maxSpeed = BUTTERFLY.FLEE_SPEED;
     this._angle         = Math.random() * Math.PI * 2;
     this._nextTurn      = 0;
     this._wanderTarget  = null;
@@ -22,18 +22,21 @@ export default class Butterfly extends Entity {
     const flowers     = World.getByTag('flower');
 
     let steered = false;
+    let fleeing = false;
 
     if (player?.alive && !this._claimedAttractor && dist(this.x, this.y, player.x, player.y) < BUTTERFLY.FLEE_RADIUS) {
       this._angle    = angleBetween(player.x, player.y, this.x, this.y);
       this._nextTurn = time + 1200;
       steered = true;
+      fleeing = true;
     }
 
     if (!steered) steered = this._seekAttractor(time);
     if (!steered) this._wander(time);
 
-    this.vx = Math.cos(this._angle) * BUTTERFLY.SPEED;
-    this.vy = Math.sin(this._angle) * BUTTERFLY.SPEED;
+    const speed = fleeing ? BUTTERFLY.FLEE_SPEED : BUTTERFLY.SPEED;
+    this.vx = Math.cos(this._angle) * speed;
+    this.vy = Math.sin(this._angle) * speed;
 
     for (const flower of flowers) {
       if (!flower.active) continue;

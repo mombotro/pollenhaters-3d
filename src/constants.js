@@ -111,8 +111,9 @@ export const XP = {
 };
 export const BUTTERFLY = {
   SPEED: 60,
+  FLEE_SPEED: 200,       // speed when fleeing player
   COUNT: 4,              // spawned at run start
-  FLEE_RADIUS: 150,      // runs from player if closer than this
+  FLEE_RADIUS: 300,      // runs from player if closer than this
   DIRECTION_CHANGE: 3000, // ms between random direction changes
   BOOST_RADIUS: 80,      // radius within which butterfly boosts nearby flowers
   POLLINATE_RADIUS: 50,  // radius for auto-pollination (was 26)
