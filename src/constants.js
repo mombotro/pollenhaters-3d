@@ -47,6 +47,7 @@ export const FLOWER = {
   POLLINATION_RADIUS: 150,
   SPAWN_DELAY: 6000,
   INITIAL_COUNT: 200,
+  MAX_COUNT: 300,
   YOUNG_DURATION:  3000,   // ms in YOUNG state before sap is collectible
   OLD_DURATION:    5000,   // ms in OLD state before flower dies
   RESPAWN_DELAY:   5000,   // ms after death before a new flower spawns elsewhere

@@ -89,6 +89,8 @@ export default class GameScene {
       spawnDelay: FLOWER.SPAWN_DELAY,
       radius: FLOWER.POLLINATION_RADIUS,
       onSpawn: ({ x, y }) => {
+        const activeFlowers = World.getByTag('flower').filter(f => f.active).length;
+        if (activeFlowers >= FLOWER.MAX_COUNT) return;
         const fx = Math.max(40, Math.min(WORLD.WIDTH - 40, x));
         const fy = Math.max(40, Math.min(WORLD.HEIGHT - 40, y));
         this._spawnFlower(fx, fy);
