@@ -830,10 +830,16 @@ export default class GameScene {
 
   _initPlaygroundMenu() {
     this._pgOptions = [
-      { label: 'Hunter Wasp', key: 'hunter' },
-      { label: 'Raider Wasp', key: 'raider' },
-      { label: 'Archer Wasp', key: 'archer' },
-      { label: 'Max Honey',   key: 'maxhoney' },
+      { label: 'Hunter Wasp',       key: 'hunter' },
+      { label: 'Raider Wasp',       key: 'raider' },
+      { label: 'Archer Wasp',       key: 'archer' },
+      { label: 'Max Honey',         key: 'maxhoney' },
+      { label: 'Wave 1  (Easy)',    key: 'wave-1' },
+      { label: 'Wave 5',            key: 'wave-5' },
+      { label: 'Wave 10  (Hard)',   key: 'wave-10' },
+      { label: 'Wave 20',           key: 'wave-20' },
+      { label: 'Wave 50  (Brutal)', key: 'wave-50' },
+      { label: 'Wave 100 (Insane)', key: 'wave-100' },
     ];
     this._pgIdx = 0;
     this._pgLBWas = false;
@@ -863,6 +869,11 @@ export default class GameScene {
   _spawnPlaygroundEntity(key) {
     if (key === 'maxhoney') {
       this.resources.addHoney(this.resources.getHoneyStorage());
+      return;
+    }
+    if (key.startsWith('wave-')) {
+      const n = parseInt(key.slice(5));
+      this.waspHiveSystem.spawnWave(WaveManager.computeWave(n));
       return;
     }
     const hives = this.waspHiveSystem.hives.filter(h => h.hp > 0);

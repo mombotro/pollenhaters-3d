@@ -24,4 +24,12 @@ export default class WaveManager {
   }
 
   getWaveNumber() { return this._waveNumber; }
+
+  static computeWave(n) {
+    const total = 3 + (n - 1) * 2;
+    const raiderCount = n >= 3 ? Math.floor(total * 0.4) : 0;
+    const archerCount = n >= 4 ? Math.max(1, Math.floor(total * 0.2)) : 0;
+    const hunterCount = Math.max(0, total - raiderCount - archerCount);
+    return { number: n, hunterCount, raiderCount, archerCount };
+  }
 }
